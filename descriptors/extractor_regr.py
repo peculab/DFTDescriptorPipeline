@@ -5,6 +5,19 @@ import sys
 import subprocess
 import itertools as it
 
+def _normalize_ar_value(x):
+    if pd.isna(x):
+        return np.nan
+    s = str(x).strip()
+    # 把 'nan' / 'None' / 空字串 視為缺失
+    if s.lower() in {"nan", "none", ""}:
+        return np.nan
+    # 把像 101.0 轉成 101
+    if re.match(r"^-?\d+\.0$", s):
+        s = s[:-2]
+    return s
+
+
 def ensure_morfeus():
     try:
         import morfeus
@@ -703,50 +716,67 @@ def run_full_pipeline(log_folder, xlsx_path, target="ln(kobs)",
     df = pd.read_excel(xlsx_path)
 
     print(f"\n[STEP2] Extracting log features for each unique Ar...")
-    # 允許兩種格式：
-    # A) 多欄：Ar1, Ar2, Ar3, ...
-    # B) 單欄：Ar
+
+    # 偵測多欄 Ar1, Ar2, Ar3...；否則退回單欄 Ar
     ar_cols = [c for c in df.columns if re.fullmatch(r"Ar\d+", c)]
     if "Ar" in df.columns and not ar_cols:
-        ar_series = df["Ar"].dropna().astype(str)
+        ar_series = df["Ar"].dropna()
     else:
-        # 將多個 Ar* 欄位疊成一欄
         stacks = []
         for c in ar_cols:
-            stacks.append(df[c].dropna().astype(str))
-        ar_series = pd.concat(stacks, ignore_index=True).dropna().astype(str)
+            stacks.append(df[c].dropna())
+        ar_series = pd.concat(stacks, ignore_index=True).dropna()
+
+    # 先做正規化（含把 101.0 -> 101）
+    ar_series = ar_series.apply(_normalize_ar_value).dropna()
 
     unique_ar_df = pd.DataFrame({"Ar": ar_series.unique()})
+    # 對 unique_ar_df 的 key 也做正規化，並建立 Ar_key 供 merge 用
+    unique_ar_df["Ar"] = unique_ar_df["Ar"].apply(_normalize_ar_value)
+    unique_ar_df["Ar_key"] = unique_ar_df["Ar"]
+
     unique_ar_df["log_path"] = unique_ar_df["Ar"].apply(lambda ar: os.path.join(log_folder, f"{ar}.log"))
     unique_ar_df["log_exists"] = unique_ar_df["log_path"].apply(os.path.exists)
     unique_ar_df = unique_ar_df[unique_ar_df["log_exists"]].reset_index(drop=True)
 
-
-    # ========== STEP 3: 合併特徵 ==========
     print(f"\n[STEP3] Merging features into main dataframe")
 
     if auto_pairing:
         # 找到所有 Ar 群（Ar1, Ar2, Ar3, ...）
         ar_cols = [c for c in df.columns if re.fullmatch(r"Ar\d+", c)]
         if not ar_cols and "Ar" in df.columns:
-            # 單欄 Ar 的相容處理
-            df = df.merge(unique_ar_df, left_on="Ar", right_on="Ar", how="left")
-            features = [col for col in unique_ar_df.columns if col != "Ar" and col != "log_path" and col != "log_exists"]
+            # 單欄 Ar 的相容處理：一樣先正規化
+            df["Ar"] = df["Ar"].apply(_normalize_ar_value)
+            df = df.merge(unique_ar_df, on="Ar", how="left")
+            # 從 unique_ar_df 裡挑特徵欄（排除 meta 欄）
+            meta_exclude = {"Ar", "Ar_key", "log_path", "log_exists"}
+            features = [c for c in unique_ar_df.columns if c not in meta_exclude]
         else:
-            # 多欄：對每個 ArX 做一次 prefix merge
+            # 多欄情境：先把所有 Ar* 欄位正規化
             for arcol in ar_cols:
-                df = df.merge(unique_ar_df.add_prefix(f"{arcol}_"),
-                          left_on=arcol, right_on=f"{arcol}_Ar", how="left")
-                if f"{arcol}_Ar" in df.columns:
-                    df = df.drop(columns=[f"{arcol}_Ar"])
-            # 特徵欄：所有以 ArX_ 開頭（X 為數字）的欄位
-            features = [c for c in df.columns if re.match(r"Ar\d+_", c)]
+                df[arcol] = df[arcol].apply(_normalize_ar_value)
+
+            # 對每個 ArX 做 prefix merge（用 Ar_key 對齊）
+            for arcol in ar_cols:
+                pref = f"{arcol}_"
+                right = unique_ar_df.add_prefix(pref)
+                df = df.merge(right, left_on=arcol, right_on=pref + "Ar_key", how="left")
+                # 丟掉輔助欄避免汙染 features
+                drop_meta = [x for x in [pref + "Ar", pref + "Ar_key", pref + "log_path", pref + "log_exists"] if x in df.columns]
+                if drop_meta:
+                    df = df.drop(columns=drop_meta)
+
+            # 特徵欄：所有 ArX_ 開頭，但排除 meta 名稱（避免把 log 路徑類欄位當特徵）
+            feature_exclude_suffixes = ("_Ar", "_Ar_key", "_log_path", "_log_exists")
+            features = [c for c in df.columns
+                        if re.match(r"Ar\d+_", c) and not any(c.endswith(suf) for suf in feature_exclude_suffixes)]
     else:
-        overlap_cols = [col for col in unique_ar_df.columns if col in df.columns and col != "Ar"]
+        overlap_cols = [col for col in unique_ar_df.columns if col in df.columns and col not in ["Ar", "Ar_key"]]
         df = df.drop(columns=overlap_cols)
         df = df.merge(unique_ar_df, on="Ar", how="left")
-        features = [c for c in unique_ar_df.columns if c not in ["Ar", "log_path", "log_exists"]]
+        features = [c for c in unique_ar_df.columns if c not in ["Ar", "Ar_key", "log_path", "log_exists"]]
 
+    df.to_excel(output_path, index=False)
 
     # ========== STEP 4: 建模 ==========
     print(f"\n[STEP4] Performing regression modeling")
