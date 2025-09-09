@@ -3,24 +3,10 @@
 # ====== [Auto-install morfeus-ml if missing, and force restart Colab/Jupyter] ======
 import sys
 import subprocess
-import itertools as it
-
-def _normalize_ar_value(x):
-    if pd.isna(x):
-        return np.nan
-    s = str(x).strip()
-    # 把 'nan' / 'None' / 空字串 視為缺失
-    if s.lower() in {"nan", "none", ""}:
-        return np.nan
-    # 把像 101.0 轉成 101
-    if re.match(r"^-?\d+\.0$", s):
-        s = s[:-2]
-    return s
-
 
 def ensure_morfeus():
     try:
-        import morfeus
+        import morfeus  # noqa: F401
     except ImportError:
         print("\n[Auto-installing morfeus-ml... If you see Successfully installed below, please RESTART and rerun this script/Colab cell!]\n")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "morfeus-ml"])
@@ -37,6 +23,7 @@ import math
 import numpy as np
 import pandas as pd
 import random
+import itertools as it
 
 from itertools import combinations
 from sklearn.preprocessing import StandardScaler
@@ -44,17 +31,48 @@ from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
 
-# If using morfeus, need to install it
+# morfeus (optional import again for IDEs; ensure_morfeus already handled install)
 try:
     from morfeus import read_xyz, Sterimol
     from morfeus.utils import get_radii
-except ImportError:
+except Exception:
     pass
+
+# ============ Helpers (normalization, column detection, logs) ============
+
+def _normalize_ar_value(x):
+    """Normalize Ar key values for consistent merging: strip, cast to str, convert '101.0'→'101'."""
+    if pd.isna(x):
+        return np.nan
+    s = str(x).strip()
+    if s.lower() in {"nan", "none", ""}:
+        return np.nan
+    # Convert '123.0' to '123'
+    if re.match(r"^-?\d+\.0$", s):
+        s = s[:-2]
+    return s
+
+def _canon_ar_cols(df: pd.DataFrame):
+    """
+    Detect columns like Ar1, AR2, 'Ar 3' (case/space tolerant), and rename them to canonical 'ArN' names.
+    Returns the canonical list (e.g., ['Ar1','Ar2',...]).
+    """
+    ar_cols_raw = [c for c in df.columns if re.fullmatch(r"[Aa][Rr]\s*\d+", str(c).strip())]
+    mapping = {}
+    for c in ar_cols_raw:
+        n = re.search(r"\d+", str(c)).group(0)
+        mapping[c] = f"Ar{n}"
+    if mapping:
+        df.rename(columns=mapping, inplace=True)
+    return [mapping.get(c, c) for c in ar_cols_raw]
+
+def _list_log_basenames(log_folder: str):
+    return {os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(log_folder, "*.log"))}
 
 # ============ 1. Parameter Extraction (log + xlsx) ============
 
 def extract_homo_lumo(log_file):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     matches = re.findall(r"Population.*?SCF [Dd]ensity.*?(\s+Alpha.*?)\n\s*Condensed", content, re.DOTALL)
     if not matches:
@@ -69,7 +87,7 @@ def extract_homo_lumo(log_file):
     return None, None
 
 def extract_dipole_moment(log_file):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     matches = re.findall(r"Dipole moment \(field-independent basis, Debye\):.*?(X=.*?Tot=.*?)\n", content, re.DOTALL)
     if not matches:
@@ -81,7 +99,7 @@ def extract_dipole_moment(log_file):
     return None
 
 def extract_polarizability(log_file):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     matches = re.findall(r"Exact polarizability:\s+([-+]?\d*\.\d+|\d+)\s+([-+]?\d*\.\d+|\d+)\s+([-+]?\d*\.\d+|\d+)\s+([-+]?\d*\.\d+|\d+)\s+([-+]?\d*\.\d+|\d+)\s+([-+]?\d*\.\d+|\d+)", content)
     if not matches:
@@ -92,7 +110,7 @@ def extract_polarizability(log_file):
     return avg_polarizability
 
 def extract_nbo_section(log_file):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     match = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)(-+\n)", content, re.DOTALL)
     if not match:
@@ -105,76 +123,52 @@ def find_oh_bonds(nbo_section):
 
 def find_c1_c2(nbo_section, oh_bond_atoms):
     last_found = (None, None, None, None, None, None, None)
-
     for a, b in oh_bond_atoms:
         c_candidates = re.findall(rf"BD \(\s*1\s*\)\s*C\s*(\d+)\s*-\s*O\s*{a}", nbo_section)
-
         for c in c_candidates:
             c = int(c)
             o_d_candidates = re.findall(rf"BD \(\s*[12]\s*\)\s*C\s*{c}\s*-\s*O\s*(\d+)", nbo_section)
-
             for d in o_d_candidates:
                 d = int(d)
                 e_candidates = re.findall(rf"BD \(\s*1\s*\)\s*C\s*(\d+)\s*-\s*C\s*{c}", nbo_section)
-
                 for e in e_candidates:
                     e = int(e)
-
-                    # Search for bonds connected to e
                     bond_types = re.findall(rf"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)", nbo_section)
-
                     bond_pairs = {}
                     e_neighbors = []
-
                     for bond_type, atom1, num1, atom2, num2 in bond_types:
                         num1, num2 = int(num1), int(num2)
-
-                        # Only record bonds related to e
                         if num1 == e or num2 == e:
                             other = num2 if num1 == e else num1
                             e_neighbors.append((bond_type, other))
-
                             bond_pair = frozenset([num1, num2])
                             if bond_pair not in bond_pairs:
                                 bond_pairs[bond_pair] = set()
                             bond_pairs[bond_pair].add(bond_type)
-
-                    # Count single and double bonds
                     single_count = sum("1" in types for types in bond_pairs.values())
                     double_count = sum("2" in types for types in bond_pairs.values())
-
-                    # Always keep the last found result even if it does not match conditions
                     last_found = (c, e, a, b, d, None, None)
-
                     if single_count >= 2 and double_count >= 1:
-                        # Further find f and g
                         f, g = None, None
                         single_neighbors = [n for t, n in e_neighbors if t == "1"]
                         double_neighbors = [n for t, n in e_neighbors if t == "2"]
-
                         for neighbor in single_neighbors:
                             if f is None:
                                 f = neighbor
                             elif g is None and neighbor != f:
                                 g = neighbor
-
                         for neighbor in double_neighbors:
                             if g is None or neighbor == f:
                                 g = neighbor
-
                         print(f"Found C1: {c}, C2: {e}, A: {a}, B: {b}, D: {d}, F: {f}, G: {g}")
                         return c, e, a, b, d, f, g
-
-    # If nothing matched, return last found result
     if last_found[0] is not None:
         print(f"[WARN] No C1-C2 pairs with the required bonding pattern found, returning last found values: {last_found}")
         return last_found
-
-    # No results at all
     return None, None, None, None, None, None, None
 
 def extract_nbo_values(log_file, c1, c2, a):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     match = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)-{30,}", content, re.DOTALL)
     if not match:
@@ -200,7 +194,7 @@ def extract_nbo_values(log_file, c1, c2, a):
 def extract_coordinates(log_file, c1, c2):
     coordinates = {}
     inside_standard_orientation = False
-    with open(log_file, 'r') as file:
+    with open(log_file, 'r', errors='ignore') as file:
         for line in file:
             if "Standard orientation" in line:
                 inside_standard_orientation = True
@@ -224,7 +218,7 @@ def extract_coordinates(log_file, c1, c2):
         return None, None, None
 
 def extract_nbo_charges(log_file, c1, c2, a):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.readlines()
     summary_index = None
     for i in range(len(content) - 1, -1, -1):
@@ -249,7 +243,7 @@ def parse_floats(line):
     return [float(x) for x in re.findall(r'-?\d+\.\d+', line)]
 
 def extract_frequencies(log_file, atom_c, atom_d):
-    with open(log_file, 'r', encoding='utf-8') as f:
+    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.readlines()
     vib_start = None
     for i in range(len(content)):
@@ -288,7 +282,7 @@ def extract_frequencies(log_file, atom_c, atom_d):
                         except IndexError:
                             continue
                 i = j
-            except Exception as e:
+            except Exception:
                 i += 1
         else:
             i += 1
@@ -302,7 +296,7 @@ def extract_frequencies(log_file, atom_c, atom_d):
 atomic_symbols = {1: 'H', 6: 'C', 7: 'N', 8: 'O', 9: 'F', 15: 'P', 16: 'S', 17: 'Cl', 35: 'Br', 53: 'I'}
 
 def extract_last_standard_orientation(log_path):
-    with open(log_path, "r") as f:
+    with open(log_path, "r", errors='ignore') as f:
         lines = f.readlines()
     geometries = []
     block = []
@@ -343,7 +337,7 @@ def extract_last_standard_orientation(log_path):
             if symbol is None:
                 return None
             atoms.append((symbol, x, y, z))
-        except Exception as e:
+        except Exception:
             return None
     return atoms
 
@@ -376,16 +370,13 @@ def add_sterimol_to_df(df, log_folder):
         if not atoms:
             print("  [SKIP] Failed to extract atoms")
             continue
-
-        # Allow some index to be None, but explicitly report and set to None
         try:
-            if any(pd.isna(x) for x in [row["Ar_a"], row["Ar_b"], row["Ar_d"], row["Ar_c"], row["Ar_e"]]):
-                print(f"  [WARN] Some atom index columns are NaN: Ar_a={row['Ar_a']}, Ar_b={row['Ar_b']}, Ar_d={row['Ar_d']}, Ar_c={row['Ar_c']}, Ar_e={row['Ar_e']}; sterimol set to None for this molecule.")
+            if any(pd.isna(x) for x in [row.get("Ar_a"), row.get("Ar_b"), row.get("Ar_d"), row.get("Ar_c"), row.get("Ar_e")]):
+                print(f"  [WARN] Some atom index columns are NaN: Ar_a={row.get('Ar_a')}, Ar_b={row.get('Ar_b')}, Ar_d={row.get('Ar_d')}, Ar_c={row.get('Ar_c')}, Ar_e={row.get('Ar_e')}; sterimol set to None for this molecule.")
                 df.at[idx, "Ar_Ster_L"] = None
                 df.at[idx, "Ar_Ster_B1"] = None
                 df.at[idx, "Ar_Ster_B5"] = None
                 continue
-
             exclude_atoms = [int(row["Ar_a"]), int(row["Ar_b"]), int(row["Ar_d"])]
             atoms_to_keep = [a for i, a in enumerate(atoms) if (i + 1) not in exclude_atoms]
             if len(atoms_to_keep) < 2:
@@ -412,6 +403,7 @@ def add_sterimol_to_df(df, log_folder):
     return df
 
 # ============ 3. Regr/Learning ==============
+
 def prepare_data(path, features, target):
     data = pd.read_excel(path)
     data = data.dropna(subset=features + [target])
@@ -422,33 +414,43 @@ def prepare_data(path, features, target):
 def compute_loocv_metrics(X, y):
     n = X.shape[0]
     X_design = np.hstack([np.ones((n, 1)), X])
-    XtX_inv = np.linalg.inv(X_design.T @ X_design)
+    XtX = X_design.T @ X_design
+    # tiny ridge for stability
+    XtX += 1e-8 * np.eye(XtX.shape[0])
+    try:
+        XtX_inv = np.linalg.inv(XtX)
+    except np.linalg.LinAlgError:
+        XtX_inv = np.linalg.pinv(XtX)
     beta = XtX_inv @ X_design.T @ y
     H = X_design @ XtX_inv @ X_design.T
     h = np.diag(H)
     y_pred = X_design @ beta
+    # LOO formula
     y_loo = (y_pred - h * y) / (1 - h)
     ss_total = np.sum((y - np.mean(y))**2)
     ss_res_loocv = np.sum((y - y_loo)**2)
     ss_res_full = np.sum((y - y_pred)**2)
     return {
-        "r2_full": 1 - ss_res_full / ss_total,
-        "q2_loocv": 1 - ss_res_loocv / ss_total,
+        "r2_full": 1 - ss_res_full / ss_total if ss_total > 0 else 0.0,
+        "q2_loocv": 1 - ss_res_loocv / ss_total if ss_total > 0 else 0.0,
         "rmse": np.sqrt(np.mean((y - y_loo)**2)),
         "coefficients": beta[1:].tolist(),
         "intercept": beta[0]
     }
 
 def evaluate_combinations(data, target, feature_set):
+    """Return metrics for a given feature set; do not filter here (let search_* handle thresholds)."""
     try:
-        X = data[feature_set].astype(float).values  # ✅ 強制轉為 float 避免 @ 矩陣乘法出錯
+        X = data[feature_set].astype(float).values
         y = data[target].values
         result = compute_loocv_metrics(X, y)
         result["features"] = feature_set
-        return result if result["r2_full"] > 0.7 else None
+        return result
     except Exception as e:
         print(f"[ERROR] Combo {feature_set} failed: {e}")
         return None
+
+# ---- Combination helpers ----
 
 def _integer_compositions_with_bounds(total, mins, maxs):
     m = len(mins)
@@ -479,8 +481,8 @@ def search_best_models_general(
     groups,                          # e.g. {"Ar1":[...], "Ar2":[...], "Ar3":[...]}
     max_features=5,
     r2_threshold=0.7,
-    balance="bounds",                # 用 bounds 來「強制每組至少取 1」
-    group_bounds=None,               # 若為 None，會自動設為每組 (min=1, max=len(group))
+    balance="bounds",                # default: each group must contribute at least 1
+    group_bounds=None,               # if None -> each group (1, len(group))
     save_csv=True,
     csv_path="regression_search_results.csv",
     verbose=True,
@@ -495,7 +497,6 @@ def search_best_models_general(
         print("⚠️ No groups detected.")
         return [], None
 
-    # 預設 bounds：每組至少 1、最多該組欄位數
     if group_bounds is None:
         group_bounds = {g: (1, len(groups[g])) for g in group_names}
 
@@ -505,16 +506,14 @@ def search_best_models_general(
         if verbose:
             print(f"\n🔍 Testing {k}-feature combinations across {m} groups")
 
-        # 若 k < 組數，無法滿足「每組至少 1」→ 直接跳過
         if balance == "bounds" and k < m:
             if verbose:
                 print(f"⏭️  skip k={k} (need ≥ {m} to give each group ≥1 feature)")
             continue
 
-        # 建 mins/maxs
         if balance == "equal":
             mins, maxs = _balanced_bounds(m, k)
-        else:  # bounds or any
+        else:
             mins, maxs = [], []
             for gname, glist in zip(group_names, group_lists):
                 lo, hi = group_bounds.get(gname, (0, len(glist)))
@@ -533,7 +532,7 @@ def search_best_models_general(
             infeasible = False
             for glist, take in zip(group_lists, alloc):
                 if take == 0:
-                    per_group_choices.append([()])  # 佔位
+                    per_group_choices.append([()])
                 else:
                     if take > len(glist):
                         infeasible = True
@@ -551,7 +550,7 @@ def search_best_models_general(
 
                 combos_seen += 1
                 if (max_combinations_per_k is not None) and (combos_seen > max_combinations_per_k):
-                    if random.random() < 0.98:  # 只保留少數樣本，避免爆量
+                    if random.random() < 0.98:
                         continue
 
                 result = evaluate_combinations(data, target, combo)
@@ -568,6 +567,7 @@ def search_best_models_general(
 
     df_all = pd.DataFrame(all_results)
     df_all["num_features"] = df_all["features"].apply(len)
+
     if save_csv:
         df_all.to_csv(csv_path, index=False)
         if verbose:
@@ -579,65 +579,34 @@ def search_best_models_general(
 
     return df_all.to_dict(orient="records"), best_model
 
-
-
 def search_best_models(data, features, target, max_features=5, r2_threshold=0.7,
-                                    save_csv=True, csv_path="regression_search_results.csv", verbose=True):
-
-    ar1_features = [f for f in features if f.startswith("Ar1_")]
-    ar2_features = [f for f in features if f.startswith("Ar2_")]
-    enforce_balanced = bool(ar1_features) and bool(ar2_features)
-
+                       save_csv=True, csv_path="regression_search_results.csv", verbose=True):
+    """Legacy ungrouped exhaustive search (kept as fallback)."""
     all_results = []
-
     for k in range(1, max_features + 1):
         if verbose:
             print(f"\n🔍 Testing {k}-feature combinations")
-
-        if enforce_balanced and k >= 2:
-            # 強制 Ar1 + Ar2 平衡
-            for ar1_k in range(1, k):
-                ar2_k = k - ar1_k
-                ar1_combs = list(combinations(ar1_features, ar1_k))
-                ar2_combs = list(combinations(ar2_features, ar2_k))
-                for a1 in ar1_combs:
-                    for a2 in ar2_combs:
-                        comb = list(a1) + list(a2)
-                        result = evaluate_combinations(data, target, comb)
-                        if result and result["r2_full"] >= r2_threshold:
-                            all_results.append(result)
-                            if verbose:
-                                print(f"✅ {comb} | R² = {result['r2_full']:.3f} | Q² = {result['q2_loocv']:.3f}")
-                        elif verbose:
-                            print(f"❌ {comb} | skipped")
-        else:
-            # 一般全面組合
-            combs = list(combinations(features, k))
-            for c in combs:
-                result = evaluate_combinations(data, target, list(c))
-                if result and result["r2_full"] >= r2_threshold:
-                    all_results.append(result)
-                    if verbose:
-                        print(f"✅ {list(c)} | R² = {result['r2_full']:.3f} | Q² = {result['q2_loocv']:.3f}")
-                elif verbose:
-                    print(f"❌ {list(c)} | skipped")
-
+        combs = list(combinations(features, k))
+        for c in combs:
+            result = evaluate_combinations(data, target, list(c))
+            if result and result["r2_full"] >= r2_threshold:
+                all_results.append(result)
+                if verbose:
+                    print(f"✅ {list(c)} | R² = {result['r2_full']:.3f} | Q² = {result['q2_loocv']:.3f}")
+            elif verbose:
+                print(f"❌ {list(c)} | skipped")
     if not all_results:
         print("⚠️ No valid models found.")
         return [], None
-
     df_all = pd.DataFrame(all_results)
     df_all["num_features"] = df_all["features"].apply(len)
-
     if save_csv:
         df_all.to_csv(csv_path, index=False)
         if verbose:
             print(f"\n📄 Saved all {len(df_all)} results to {csv_path}")
-
     best_model = df_all.sort_values(by="q2_loocv", ascending=False).iloc[0].to_dict()
     if verbose:
         print(f"\n🏆 Best model: {best_model['features']} | Q² = {best_model['q2_loocv']:.3f} | R² = {best_model['r2_full']:.3f}")
-
     return df_all.to_dict(orient="records"), best_model
 
 # ============ 4. Regression Plot ============
@@ -645,28 +614,13 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     X_columns = best_model['features']
     coefficients = np.array(best_model['coefficients'])
     intercept = best_model['intercept']
-
     y_actual = df[target]
     X_values = df[X_columns].values
-    
     y_pred = np.dot(X_values, coefficients) + intercept
-
-    # 找出所有 ArN 欄位
-    ar_cols_for_plot = [c for c in df.columns if re.fullmatch(r"Ar\d+", c)]
-    base_cols = ['Compound'] if 'Compound' in df.columns else []
-    plot_df = pd.DataFrame({
-        **{c: df[c] for c in base_cols},
-        **{c: df[c] for c in ar_cols_for_plot},
-        'y_actual': y_actual,
-        'y_pred': y_pred
-    })
-    subset_cols = base_cols + ar_cols_for_plot if (base_cols or ar_cols_for_plot) else ['y_actual','y_pred']
-    plot_df = plot_df.drop_duplicates(subset=subset_cols)
-    
     fig, ax = plt.subplots(figsize=(8, 7))
     ax.set_facecolor('w')
-    ax.plot(plot_df['y_actual'], plot_df['y_actual'], color='k')
-    ax.scatter(plot_df['y_actual'], plot_df['y_pred'], edgecolor='b', facecolor='b', alpha=0.7)
+    ax.plot(y_actual, y_actual, color='k')
+    ax.scatter(y_actual, y_pred, edgecolor='b', facecolor='b', alpha=0.7)
     ax.set_ylabel(f'Predicted {target}', fontsize=18, color='k')
     ax.set_xlabel(f'Experimental {target}', fontsize=18, color='k')
     ax.spines['bottom'].set_color('k')
@@ -677,7 +631,7 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     fig.text(0.55, 0.35, f'$R^2= {best_model["r2_full"]:.2f}$', fontsize=16)
     fig.text(0.55, 0.30, f'rmse = {best_model["rmse"]:.2f}', fontsize=16)
     fig.text(0.55, 0.25, f'$Q^2= {best_model["q2_loocv"]:.2f}$ (LOO)', fontsize=16)
-    fig.text(0.55, 0.20, f'{len(plot_df)} unique data points', fontsize=16, style='italic')
+    fig.text(0.55, 0.20, f'{len(y_actual)} data points', fontsize=16, style='italic')
     fig.tight_layout()
     plt.savefig(savepath, bbox_inches='tight')
     plt.show()
@@ -695,17 +649,13 @@ def report_index_problems(df, log_folder=None):
     else:
         print("❗The following molecules have atom index as None/NaN during extraction:\n")
         print(problem_rows[["Ar"] + index_cols])
-        # If no log_file column, try to fill it automatically
         if log_folder is not None and "log_file" not in problem_rows.columns:
             problem_rows = problem_rows.copy()
             problem_rows["log_file"] = problem_rows["Ar"].apply(lambda ar: f"{log_folder}/{ar}.log")
             print("\nCorresponding log_file:")
             print(problem_rows[["Ar", "log_file"]])
-        # Export
         problem_rows.to_excel("problem_index_report.xlsx", index=False)
         print("\nSaved as problem_index_report.xlsx for manual checking!")
-
-
 
 # ============ 5. Main Pipeline =============
 
@@ -715,88 +665,208 @@ def run_full_pipeline(log_folder, xlsx_path, target="ln(kobs)",
     print(f"\n[STEP1] Read Excel: {xlsx_path}")
     df = pd.read_excel(xlsx_path)
 
+    # ========== STEP 2: 建立唯一 Ar 特徵表 (unique_ar_df) ==========
     print(f"\n[STEP2] Extracting log features for each unique Ar...")
 
-    # 偵測多欄 Ar1, Ar2, Ar3...；否則退回單欄 Ar
-    ar_cols = [c for c in df.columns if re.fullmatch(r"Ar\d+", c)]
+    # 支援多欄 Ar1, Ar2, Ar3...；若無則使用單欄 Ar
+    ar_cols = _canon_ar_cols(df)  # may rename to canonical Ar1, Ar2, ...
     if "Ar" in df.columns and not ar_cols:
         ar_series = df["Ar"].dropna()
     else:
         stacks = []
         for c in ar_cols:
             stacks.append(df[c].dropna())
-        ar_series = pd.concat(stacks, ignore_index=True).dropna()
+        ar_series = pd.concat(stacks, ignore_index=True).dropna() if stacks else pd.Series([], dtype=object)
 
-    # 先做正規化（含把 101.0 -> 101）
+    # Normalize keys
     ar_series = ar_series.apply(_normalize_ar_value).dropna()
-
     unique_ar_df = pd.DataFrame({"Ar": ar_series.unique()})
-    # 對 unique_ar_df 的 key 也做正規化，並建立 Ar_key 供 merge 用
     unique_ar_df["Ar"] = unique_ar_df["Ar"].apply(_normalize_ar_value)
     unique_ar_df["Ar_key"] = unique_ar_df["Ar"]
-
     unique_ar_df["log_path"] = unique_ar_df["Ar"].apply(lambda ar: os.path.join(log_folder, f"{ar}.log"))
     unique_ar_df["log_exists"] = unique_ar_df["log_path"].apply(os.path.exists)
     unique_ar_df = unique_ar_df[unique_ar_df["log_exists"]].reset_index(drop=True)
 
+    # 若沒有任何可用的 Ar/log，直接結束
+    if unique_ar_df.empty:
+        print("⚠️ No valid Ar entries with matching log files. Stop.")
+        return df, [], {}
+
+    # 萃取 log features for each unique Ar
+    for index, row in unique_ar_df.iterrows():
+        ar = row["Ar"]
+        log_file = row["log_path"]
+        print(f"\n==== [{index+1}/{len(unique_ar_df)}] [{ar}] Processing log: {log_file} ====")
+        try:
+            avg_polar = extract_polarizability(log_file)
+            homo, lumo = extract_homo_lumo(log_file)
+            dipole_moment = extract_dipole_moment(log_file)
+            nbo_content = extract_nbo_section(log_file)
+
+            Ar_c = Ar_e = Ar_a = None
+            Ar_NBO_C2 = Ar_NBO_O1 = Ar_NBO_O2 = Ar_v_C_O = Ar_I_C_O = L_C1_C2 = None
+            Ar_b = Ar_d = Ar_f = Ar_g = None
+
+            if nbo_content:
+                oh_atoms = find_oh_bonds(nbo_content)
+                c1, c2, a, b, d, f, g = find_c1_c2(nbo_content, oh_atoms)
+                Ar_c, Ar_e, Ar_a, Ar_b, Ar_d, Ar_f, Ar_g = c1, c2, a, b, d, f, g
+                if c1 and c2 and a:
+                    try:
+                        occupancy_C1_O, energy_C1_O, occupancy_C1_C2, energy_C1_C2 = extract_nbo_values(log_file, c1, c2, a)
+                    except Exception:
+                        pass
+                    try:
+                        Ar_NBO_C1, Ar_NBO_C2, Ar_NBO_O1, Ar_NBO_O2 = extract_nbo_charges(log_file, c1, c2, a)
+                    except Exception:
+                        pass
+                    try:
+                        Ar_I_C_O, Ar_v_C_O = extract_frequencies(log_file, Ar_c, Ar_d)
+                    except Exception:
+                        pass
+                    try:
+                        coord_C1, coord_C2, L_C1_C2 = extract_coordinates(log_file, c1, c2)
+                    except Exception:
+                        pass
+
+            unique_ar_df.at[index, "Ar_NBO_C2"] = Ar_NBO_C2
+            unique_ar_df.at[index, "Ar_NBO_=O"] = Ar_NBO_O1
+            unique_ar_df.at[index, "Ar_NBO_-O"] = Ar_NBO_O2
+            unique_ar_df.at[index, "Ar_v_C=O"] = Ar_v_C_O
+            unique_ar_df.at[index, "Ar_I_C=O"] = Ar_I_C_O
+            unique_ar_df.at[index, "Ar_dp"] = dipole_moment
+            unique_ar_df.at[index, "Ar_polar"] = avg_polar
+            unique_ar_df.at[index, "Ar_LUMO"] = lumo
+            unique_ar_df.at[index, "Ar_HOMO"] = homo
+            unique_ar_df.at[index, "L_C1_C2"] = L_C1_C2
+            unique_ar_df.at[index, "Ar_c"] = Ar_c
+            unique_ar_df.at[index, "Ar_e"] = Ar_e
+            unique_ar_df.at[index, "Ar_a"] = Ar_a
+            unique_ar_df.at[index, "Ar_b"] = Ar_b
+            unique_ar_df.at[index, "Ar_d"] = Ar_d
+            unique_ar_df.at[index, "Ar_f"] = Ar_f
+            unique_ar_df.at[index, "Ar_g"] = Ar_g
+        except Exception as e:
+            print(f"[ERROR] Error occurred while processing Ar={ar}: {e}")
+            continue
+
+    # 加入 Sterimol
+    unique_ar_df = add_sterimol_to_df(unique_ar_df, log_folder)
+    report_index_problems(unique_ar_df, log_folder)
+
+    # ✅ 過濾掉任何關鍵特徵為 NaN 的 Ar
+    essential_cols = [
+        "Ar_NBO_C2", "Ar_NBO_=O", "Ar_NBO_-O", "Ar_v_C=O", "Ar_I_C=O", "Ar_dp",
+        "Ar_polar", "Ar_LUMO", "Ar_HOMO", "L_C1_C2",
+        "Ar_Ster_L", "Ar_Ster_B1", "Ar_Ster_B5"
+    ]
+    before_drop = len(unique_ar_df)
+    unique_ar_df = unique_ar_df.dropna(subset=essential_cols)
+    after_drop = len(unique_ar_df)
+    print(f"🧹 Dropped {before_drop - after_drop} Ar rows with missing essential features")
+
+    unique_ar_df.to_excel("unique_ar_features.xlsx", index=False)
+
+    # ========== STEP 3: 合併特徵 ==========
     print(f"\n[STEP3] Merging features into main dataframe")
 
-    if auto_pairing:
-        # 找到所有 Ar 群（Ar1, Ar2, Ar3, ...）
-        ar_cols = [c for c in df.columns if re.fullmatch(r"Ar\d+", c)]
-        if not ar_cols and "Ar" in df.columns:
-            # 單欄 Ar 的相容處理：一樣先正規化
-            df["Ar"] = df["Ar"].apply(_normalize_ar_value)
-            df = df.merge(unique_ar_df, on="Ar", how="left")
-            # 從 unique_ar_df 裡挑特徵欄（排除 meta 欄）
-            meta_exclude = {"Ar", "Ar_key", "log_path", "log_exists"}
-            features = [c for c in unique_ar_df.columns if c not in meta_exclude]
-        else:
-            # 多欄情境：先把所有 Ar* 欄位正規化
-            for arcol in ar_cols:
-                df[arcol] = df[arcol].apply(_normalize_ar_value)
+    # 1) 偵測多欄 Ar
+    ar_cols = _canon_ar_cols(df)  # e.g., ['Ar1','Ar2',...]
+    logs_in_folder = _list_log_basenames(log_folder)
 
-            # 對每個 ArX 做 prefix merge（用 Ar_key 對齊）
-            for arcol in ar_cols:
-                pref = f"{arcol}_"
-                right = unique_ar_df.add_prefix(pref)
-                df = df.merge(right, left_on=arcol, right_on=pref + "Ar_key", how="left")
-                # 丟掉輔助欄避免汙染 features
-                drop_meta = [x for x in [pref + "Ar", pref + "Ar_key", pref + "log_path", pref + "log_exists"] if x in df.columns]
-                if drop_meta:
-                    df = df.drop(columns=drop_meta)
-
-            # 特徵欄：所有 ArX_ 開頭，但排除 meta 名稱（避免把 log 路徑類欄位當特徵）
-            feature_exclude_suffixes = ("_Ar", "_Ar_key", "_log_path", "_log_exists")
-            features = [c for c in df.columns
-                        if re.match(r"Ar\d+_", c) and not any(c.endswith(suf) for suf in feature_exclude_suffixes)]
-    else:
-        overlap_cols = [col for col in unique_ar_df.columns if col in df.columns and col not in ["Ar", "Ar_key"]]
-        df = df.drop(columns=overlap_cols)
+    if not ar_cols and "Ar" in df.columns:
+        # 單欄 Ar 相容處理
+        df["Ar"] = df["Ar"].apply(_normalize_ar_value)
         df = df.merge(unique_ar_df, on="Ar", how="left")
-        features = [c for c in unique_ar_df.columns if c not in ["Ar", "Ar_key", "log_path", "log_exists"]]
+        meta_exclude = {"Ar", "Ar_key", "log_path", "log_exists"}
+        features = [c for c in unique_ar_df.columns if c not in meta_exclude]
+    else:
+        # 多欄情境：先把所有 ArN 欄位正規化
+        for c in ar_cols:
+            df[c] = df[c].apply(_normalize_ar_value)
+        # 對每個 ArN 做 prefix merge
+        for c in ar_cols:
+            pref = f"{c}_"
+            right = unique_ar_df.add_prefix(pref)
+            df = df.merge(right, left_on=c, right_on=pref + "Ar_key", how="left")
+            # 丟掉 meta 欄，避免汙染特徵
+            for m in (pref + "Ar", pref + "Ar_key", pref + "log_path", pref + "log_exists"):
+                if m in df.columns:
+                    df.drop(columns=m, inplace=True)
+        # 特徵欄：所有 ArN_ 開頭，但排除 meta 尾碼
+        feature_exclude_suffixes = ("_Ar", "_Ar_key", "_log_path", "_log_exists")
+        features = [c for c in df.columns
+                    if re.match(r"^Ar\d+_", c) and not any(c.endswith(suf) for suf in feature_exclude_suffixes)]
 
+    # ---- 診斷輸出 ----
+    print(f"🔎 Detected Ar columns in sheet: {ar_cols if ar_cols else ['Ar']}")
+    total_unique = unique_ar_df.shape[0]
+    print(f"🗂️ Unique Ar with matching log files: {total_unique}")
+    print(f"🧩 Total feature columns found: {len(features)}")
+
+    if len(features) == 0:
+        # 嘗試列出缺檔的例子，幫助除錯
+        missing = set()
+        if ar_cols:
+            seen = set()
+            for c in ar_cols:
+                seen.update({str(_normalize_ar_value(x)) for x in df[c].dropna().unique().tolist()})
+            missing = seen - logs_in_folder
+        elif "Ar" in df.columns:
+            seen = set(map(str, df["Ar"].dropna().unique()))
+            missing = seen - logs_in_folder
+        if missing:
+            print(f"⚠️ No feature columns produced. Examples of missing logs (first 5): {sorted(list(missing))[:5]}")
+
+    # 保存中間結果
     df.to_excel(output_path, index=False)
 
     # ========== STEP 4: 建模 ==========
     print(f"\n[STEP4] Performing regression modeling")
 
-    df = df.dropna(subset=features + [target])
-    if df.empty:
-        print("⚠️ 無可用資料進行回歸")
+    if not features:
+        print("⚠️ 無可用特徵欄位，結束。")
         return df, [], {}
 
-    # 依 prefix 建 groups（如 Ar1_xxx → group=Ar1）
+    df_model = df.dropna(subset=features + [target])
+    if df_model.empty:
+        print("⚠️ 無可用資料進行回歸（刪缺失後無資料）。")
+        return df, [], {}
+
+    # 依 prefix 建 group（Ar1_... → Ar1）
     groups = {}
     for col in features:
-        prefix = col.split("_", 1)[0]   # Ar1_*** -> Ar1
-        groups.setdefault(prefix, []).append(col)
+        g = col.split("_", 1)[0]
+        groups.setdefault(g, []).append(col)
 
-    # 每組至少取 1（bounds 模式），若 k < 組數會自動跳過
-    group_bounds = {g: (1, min(3, len(cols))) for g, cols in groups.items()}  # 可自行調整上限
+    # 顯示每組特徵數
+    for g, cols in groups.items():
+        print(f"   • {g}: {len(cols)} features")
 
+    # Fallback：若沒有任何 group（理論上不會，但保險）
+    if not groups:
+        print("⚠️ No groups detected. Falling back to ungrouped exhaustive search.")
+        results, best_model = search_best_models(
+            data=df_model,
+            features=features,
+            target=target,
+            max_features=5,
+            r2_threshold=0.7,
+            save_csv=True,
+            csv_path="regression_search_results.csv",
+            verbose=True
+        )
+        if best_model:
+            plot_best_regression(target, df_model, best_model, plot_path)
+        else:
+            print("⚠️ 沒有符合條件的模型，跳過繪圖")
+        print("\n✅ Analysis complete!")
+        return df, results, best_model
+
+    # 正式：多組平衡（每組至少 1，至多 3，可自行調整）
+    group_bounds = {g: (1, min(3, len(cols))) for g, cols in groups.items()}
     results, best_model = search_best_models_general(
-        data=df,
+        data=df_model,
         target=target,
         groups=groups,
         max_features=5,
@@ -809,17 +879,10 @@ def run_full_pipeline(log_folder, xlsx_path, target="ln(kobs)",
         max_combinations_per_k=20000
     )
 
-
     if best_model:
-        plot_best_regression(target, df, best_model, plot_path)
+        plot_best_regression(target, df_model, best_model, plot_path)
     else:
         print("⚠️ 沒有符合條件的模型，跳過繪圖")
 
     print(f"\n✅ Analysis complete!")
-
     return df, results, best_model
-
-
-
-
-
