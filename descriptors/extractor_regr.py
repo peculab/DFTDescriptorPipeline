@@ -614,9 +614,17 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     X_columns = best_model['features']
     coefficients = np.array(best_model['coefficients'])
     intercept = best_model['intercept']
+    
     y_actual = df[target]
     X_values = df[X_columns].values
     y_pred = np.dot(X_values, coefficients) + intercept
+
+    # 建立公式字串
+    formula = f'{target} = {" + ".join([f"{c:.2f}({f})" for c, f in zip(coefficients, X_columns)])} + {intercept:.2f}'
+
+    # 只在 console 印公式
+    print("Regression Formula:", formula)
+
     fig, ax = plt.subplots(figsize=(8, 7))
     ax.set_facecolor('w')
     ax.plot(y_actual, y_actual, color='k')
@@ -627,14 +635,17 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     ax.spines['left'].set_color('k')
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-    fig.text(0.13, 0.95, f'{target} = {" + ".join([f"{c:.2f}({f})" for c, f in zip(coefficients, X_columns)])} + {intercept:.2f}', fontsize=10)
+
+    # 其他統計指標 (保留)
     fig.text(0.55, 0.35, f'$R^2= {best_model["r2_full"]:.2f}$', fontsize=16)
     fig.text(0.55, 0.30, f'rmse = {best_model["rmse"]:.2f}', fontsize=16)
     fig.text(0.55, 0.25, f'$Q^2= {best_model["q2_loocv"]:.2f}$ (LOO)', fontsize=16)
     fig.text(0.55, 0.20, f'{len(y_actual)} data points', fontsize=16, style='italic')
+
     fig.tight_layout()
     plt.savefig(savepath, bbox_inches='tight')
     plt.show()
+
 
 def report_index_problems(df, log_folder=None):
     """
@@ -886,3 +897,4 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
