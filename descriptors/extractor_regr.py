@@ -479,7 +479,7 @@ def search_best_models_general(
     data,
     target,
     groups,                          # e.g. {"Ar1":[...], "Ar2":[...], "Ar3":[...]}
-    max_features=5,
+    max_features,
     r2_threshold=0.7,
     balance="bounds",                # default: each group must contribute at least 1
     group_bounds=None,               # if None -> each group (1, len(group))
@@ -579,7 +579,7 @@ def search_best_models_general(
 
     return df_all.to_dict(orient="records"), best_model
 
-def search_best_models(data, features, target, max_features=5, r2_threshold=0.7,
+def search_best_models(data, features, target, max_features, r2_threshold=0.7,
                        save_csv=True, csv_path="regression_search_results.csv", verbose=True):
     """Legacy ungrouped exhaustive search (kept as fallback)."""
     all_results = []
@@ -659,7 +659,7 @@ def report_index_problems(df, log_folder=None):
 
 # ============ 5. Main Pipeline =============
 
-def run_full_pipeline(log_folder, xlsx_path, target="ln(kobs)",
+def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
                       output_path="final_output.xlsx", plot_path='Regression_Plot.png',
                       auto_pairing=True):
     print(f"\n[STEP1] Read Excel: {xlsx_path}")
@@ -850,7 +850,7 @@ def run_full_pipeline(log_folder, xlsx_path, target="ln(kobs)",
             data=df_model,
             features=features,
             target=target,
-            max_features=5,
+            max_features=max_features,
             r2_threshold=0.7,
             save_csv=True,
             csv_path="regression_search_results.csv",
@@ -869,7 +869,7 @@ def run_full_pipeline(log_folder, xlsx_path, target="ln(kobs)",
         data=df_model,
         target=target,
         groups=groups,
-        max_features=5,
+        max_features=max_features,
         r2_threshold=0.7,
         balance="bounds",
         group_bounds=group_bounds,
