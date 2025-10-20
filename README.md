@@ -1,90 +1,85 @@
 # DFTDescriptorPipeline
 
-A Python pipeline for automating descriptor extraction from Gaussian log files and performing regression modeling for reaction rate prediction.
+## Overview
 
-## 🧠 Overview
-This tool extracts quantum chemistry descriptors (e.g., NBO charges, HOMO/LUMO, dipole moment, vibrational frequency, Sterimol parameters) from Gaussian `.log` files and merges them with an Excel dataset. It then performs regression modeling with LOOCV (leave-one-out cross-validation) to identify the best feature combinations for predicting a target variable (e.g., `ln(kobs)`).
+This repository provides a robust Python script, `descriptors/extractor_regr.py`, and accompanying examples for automated feature selection and regression model development based on Density Functional Theory (DFT) derived molecular descriptors.
 
-## 🔧 Features
-- **Automatic morfeus installation** for Sterimol calculation
-- **Descriptor extraction** from Gaussian logs:
-  - HOMO / LUMO energies
-  - Dipole moment
-  - Polarizability
-  - NBO charges & bond analysis
-  - Vibration frequency and IR intensity of specific bonds
-  - Sterimol descriptors (L, B1, B5)
-- **Smart pairing and merging** of Ar1/Ar2 substituents
-- **Data cleaning & NaN filtering**
-- **LOOCV regression modeling** and model ranking
-- **Regression plot** with performance metrics
-- **Problem reporting** for molecules with incomplete features
+The primary goal of this toolkit is to **identify the minimal, most statistically significant combination of physically meaningful molecular descriptors** that can accurately model and predict a target experimental property. It leverages a systematic search algorithm with feature grouping to ensure a balanced and interpretable model.
 
-## 📁 Directory Structure
-```text
-├── descriptors/extractor_regr.py                               # Main pipeline script
-├── examples/azoarene/Azoarene.xlsx                             # Input Excel with Azoarene compound info
-├── examples/azoarene/logfiles/                                 # Folder containing .log files of Azoarene
-├── examples/heck_boronic_acids/Heck_boronic_acid.xlsx          # Input Excel with heck_boronic_acids compound info
-├── examples/heck_boronic_acids/logfiles/                       # Folder containing .log files of heck_boronic_acids
-├── examples/indigo_aryl_alkyl/N_aryl_N_alkyl_indigo            # Input Excel with N_aryl_N_alkyl_indigo compound info
-├── examples/indigo_aryl_alkyl/logfiles/                        # Folder containing .log files of indigo_aryl_alkyl
-├── examples/indigo_diaryl/NN_diaryl_indigo.xlsx                # Input Excel with NN_diaryl_indigo compound info
-├── examples/indigo_diaryl/logfiles/                            # Folder containing .log files of NN_diaryl_indigo
-````
+### Key Features of `extractor_regr.py`:
 
-## 🏁 Quick Start
+* **Automated Feature Grouping:** Detects and groups related descriptors (e.g., Steric parameters, Electronic parameters, etc.) to enforce feature diversity and chemical interpretability in the resulting model.
+* **Systematic Regression Search:** Performs an exhaustive or balanced search for the best regression model (using Ordinary Least Squares, OLS) based on user-defined constraints (e.g., maximum number of features, minimum $R^2$ threshold).
+* **Balancing Constraint:** Allows for imposing limits on the number of features selected from each group, leading to more balanced and chemically intuitive models.
+* **Dependency Management:** Automatically checks for and installs the necessary `morfeus-ml` library.
+* **Visualization & Output:** Generates search results in a CSV file and plots the performance of the best-found model.
 
-### 1. Install dependencies
+## Repository Structure
+.
+├── descriptors/
+│   └── extractor\_regr.py  \# The core feature selection and regression script
+├── examples/
+│   ├── azoarene/azoarene\_v2.ipynb
+│   ├── heck\_boronic\_acids/heck\_boronic\_acids.ipynb
+│   ├── indigo\_aryl\_alkyl/indigo\_aryl\_alkyl.ipynb
+│   └── indigo\_diaryl/indigo\_diaryl.ipynb
+└── README.md
 
-```bash
-pip install pandas numpy matplotlib scikit-learn morfeus-ml
-```
+## Getting Started: Running the Examples
 
-> The script will auto-install `morfeus-ml` if missing.
+The easiest way to understand and use this toolkit is by running the provided Jupyter Notebook examples, ideally within a cloud environment like Google Colab, which handles the necessary environment setup.
 
-### 2. Prepare your data
+### Prerequisites
 
-* Put your `.log` files in a folder (e.g., `logfiles/`)
-* Your Excel file (e.g., `data.xlsx`) should include columns:
+1.  **Python 3.x**
+2.  **Required Libraries:** The script will automatically attempt to install `morfeus-ml`. Other standard libraries like `pandas`, `numpy`, `scikit-learn`, and `matplotlib` are also required.
 
-  * `Compound`, `Ar1`, `Ar2`, `ln(kobs)` or other target variable
+### 1. Set up the Environment (Crucial Step)
 
-### 3. Run the pipeline
+Because the examples are designed to run in environments like Colab, you need to ensure the core script (`extractor_regr.py`) is accessible to the notebooks.
 
-```python
-from extractor_regr import run_full_pipeline
+If you are running locally, place the `extractor_regr.py` file inside a directory named `descriptors/` at the root of your project, as shown in the structure above.
 
-run_full_pipeline(
-    log_folder='logfiles',
-    xlsx_path='data.xlsx',
-    target='ln(kobs)',
-    output_path='final_output.xlsx',
-    plot_path='Regression_Plot.png',
-    auto_pairing=True
-)
-```
+If you are running in **Google Colab**, you typically need to:
 
-## 📊 Output
+1.  Upload the `extractor_regr.py` file to your Colab environment.
+2.  Create the necessary directory structure *within* the notebook execution:
 
-* `final_output.xlsx`: Cleaned and merged features
-* `regression_search_results.csv`: LOOCV results of all feature combinations
-* `Regression_Plot.png`: Scatter plot of experimental vs predicted values
-* `problem_index_report.xlsx`: List of molecules with incomplete feature extraction
+    ```python
+    !mkdir -p descriptors
+    # In a Colab environment, you would then upload or move the file:
+    # Example: !mv /content/extractor_regr.py /content/descriptors/
+    # (Assuming you uploaded it to the root)
+    ```
+    *Note: When cloning the entire repository, this structure is automatically handled.*
 
-## 📌 Notes
+### 2. Execute the Example Notebooks
 
-* Requires Gaussian `.log` files with **NBO**, **polarizability**, **dipole**, and **frequency** information.
-* Atom indices are auto-parsed using NBO bonding rules.
-* Sterimol parameters use filtered `.xyz` files with specific atoms removed.
+The `examples/` directory contains four Jupyter notebooks demonstrating different chemical reaction systems:
 
-## 🧪 Example Output (Best Model)
+| Example File | Description | Target Property |
+| :--- | :--- | :--- |
+| `azoarene/azoarene\_v2.ipynb` | Regression analysis on a set of Azobenzene derivatives. | $\lambda_{max}$ or similar photochemical property. |
+| `heck\_boronic\_acids/heck\_boronic\_acids.ipynb` | Modeling results from Heck or similar coupling reactions with boronic acids. | Reaction yield or selectivity. |
+| `indigo\_aryl\_alkyl/indigo\_aryl\_alkyl.ipynb` | Analysis of Indigo derivatives with mixed aryl/alkyl substituents. | Spectroscopic or electronic property. |
+| `indigo\_diaryl/indigo\_diaryl.ipynb` | Analysis of Indigo derivatives with diaryl substituents. | Spectroscopic or electronic property. |
 
-```
-✅ Best model: ['Ar1_Ar_NBO_C2', 'Ar2_Ar_NBO_C2', 'Ar2_Ar_NBO_-O', 'Ar2_Ar_v_C=O', 'Ar2_Ar_Ster_L']
-Q² = 0.860 | R² = 0.896
-```
+**Steps to run an example:**
 
-## 📜 License
+1.  **Open the Notebook:** Open any of the `.ipynb` files (e.g., `azoarene_v2.ipynb`) in your preferred Jupyter environment (local or Colab).
+2.  **Execute Cells:** Run the cells sequentially. The first few cells typically handle setup, data loading (e.g., reading a `csv` file containing the property and DFT descriptors), and ensuring `extractor_regr.py` is ready.
+3.  **Core Function Call:** Look for the cell that imports and calls the main function from your script:
+    ```python
+    from descriptors.extractor_regr import process_regression
+    
+    # ... prepare your data (df, target_col, etc.) ...
+    
+    df, results, best_model = process_regression(
+        df_input=df,
+        target='LogRate', # Replace with the actual target column in the notebook
+        ... # other parameters like max_features, r2_threshold
+    )
+    ```
+4.  **Review Results:** The output will display the search progress, the identified best model, and generate a `regression_search_results.csv` file and a plot visualizing the best model's fit.
 
-MIT License
+By exploring these examples, you will see how to define the input DataFrame, specify the target column, and utilize the various parameters of the `process_regression` function within `extractor_regr.py` to tailor the feature selection process to your specific chemical system.
