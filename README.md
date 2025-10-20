@@ -2,28 +2,35 @@
 
 ## Overview
 
-This repository provides a robust Python script, `descriptors/extractor_regr.py`, and accompanying examples for automated feature selection and regression model development based on Density Functional Theory (DFT) derived molecular descriptors.
+This repository provides a robust Python script, `descriptors/extractor_regr.py`, and accompanying examples for automated **feature selection and regression model development** based on Density Functional Theory (DFT) derived molecular descriptors.
 
-The primary goal of this toolkit is to **identify the minimal, most statistically significant combination of physically meaningful molecular descriptors** that can accurately model and predict a target experimental property. It leverages a systematic search algorithm with feature grouping to ensure a balanced and interpretable model.
+The primary goal of this toolkit is to **identify the minimal, most statistically significant combination of physically meaningful molecular descriptors** that can accurately model and predict a target experimental property. It leverages a systematic search algorithm with feature grouping to ensure a balanced and interpretable model, which is critical for establishing quantitative structure-activity/property relationships (QSAR/QSPR) in computational chemistry.
 
 ### Key Features of `extractor_regr.py`:
 
 * **Automated Feature Grouping:** Detects and groups related descriptors (e.g., Steric parameters, Electronic parameters, etc.) to enforce feature diversity and chemical interpretability in the resulting model.
-* **Systematic Regression Search:** Performs an exhaustive or balanced search for the best regression model (using Ordinary Least Squares, OLS) based on user-defined constraints (e.g., maximum number of features, minimum $R^2$ threshold).
+* **Systematic Regression Search:** Performs an exhaustive or balanced search for the best regression model (using Ordinary Least Squares, **OLS**) based on user-defined constraints (e.g., maximum number of features, minimum $R^2$ threshold).
 * **Balancing Constraint:** Allows for imposing limits on the number of features selected from each group, leading to more balanced and chemically intuitive models.
 * **Dependency Management:** Automatically checks for and installs the necessary `morfeus-ml` library.
 * **Visualization & Output:** Generates search results in a CSV file and plots the performance of the best-found model.
 
+---
+
 ## Repository Structure
+
+The project follows a clean, modular structure:
+
+```tree
 .
 ├── descriptors/
-│   └── extractor\_regr.py  \# The core feature selection and regression script
+│   └── extractor_regr.py  # The core feature selection and regression script
 ├── examples/
-│   ├── azoarene/azoarene\_v2.ipynb
-│   ├── heck\_boronic\_acids/heck\_boronic\_acids.ipynb
-│   ├── indigo\_aryl\_alkyl/indigo\_aryl\_alkyl.ipynb
-│   └── indigo\_diaryl/indigo\_diaryl.ipynb
+│   ├── azoarene/azoarene_v2.ipynb
+│   ├── heck_boronic_acids/heck_boronic_acids.ipynb
+│   ├── indigo_aryl_alkyl/indigo_aryl_alkyl.ipynb
+│   └── indigo_diaryl/indigo_diaryl.ipynb
 └── README.md
+```
 
 ## Getting Started: Running the Examples
 
@@ -59,10 +66,10 @@ The `examples/` directory contains four Jupyter notebooks demonstrating differen
 
 | Example File | Description | Target Property |
 | :--- | :--- | :--- |
-| `azoarene/azoarene\_v2.ipynb` | Regression analysis on a set of Azobenzene derivatives. | $\lambda_{max}$ or similar photochemical property. |
-| `heck\_boronic\_acids/heck\_boronic\_acids.ipynb` | Modeling results from Heck or similar coupling reactions with boronic acids. | Reaction yield or selectivity. |
-| `indigo\_aryl\_alkyl/indigo\_aryl\_alkyl.ipynb` | Analysis of Indigo derivatives with mixed aryl/alkyl substituents. | Spectroscopic or electronic property. |
-| `indigo\_diaryl/indigo\_diaryl.ipynb` | Analysis of Indigo derivatives with diaryl substituents. | Spectroscopic or electronic property. |
+| `azoarene/azoarene_v2.ipynb` | Regression analysis on a set of Azobenzene derivatives. | $\lambda_{max}$ or similar photochemical property. |
+| `heck_boronic_acids/heck_boronic_acids.ipynb` | Modeling results from Heck or similar coupling reactions with boronic acids. | Reaction yield or selectivity. |
+| `indigo_aryl_alkyl/indigo_aryl_alkyl.ipynb` | Analysis of Indigo derivatives with mixed aryl/alkyl substituents. | Spectroscopic or electronic property. |
+| `indigo_diaryl/indigo_diaryl.ipynb` | Analysis of Indigo derivatives with diaryl substituents. | Spectroscopic or electronic property. |
 
 **Steps to run an example:**
 
