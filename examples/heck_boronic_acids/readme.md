@@ -2,8 +2,6 @@
 
 This repository contains a complete workflow for **extracting quantum chemical descriptors from Gaussian log files** and **predicting reaction kinetics (e.g., `ln(kobs)`)** for Heck coupling and boronic acid-related reactions using machine learning.
 
-![Regression_Plot](example.png)
-
 It includes:
 - `extractor_regr.py`: Core feature extraction and regression module
 - `heck_boronic_acids.ipynb`: Jupyter notebook to walk through the full analysis process
