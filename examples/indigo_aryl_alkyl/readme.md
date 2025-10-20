@@ -2,8 +2,6 @@
 
 This repository provides a complete pipeline to **extract quantum chemical descriptors from Gaussian log files** and **predict reactivity trends (e.g., `ln(kobs)`)** for indigo derivatives with aryl or alkyl substituents.
 
-![Regression_Plot](example.png)
-
 It combines:
 - Automated quantum descriptor extraction from `.log` files
 - Sterimol calculation using `morfeus-ml`
