@@ -2,8 +2,6 @@
 
 This project provides a complete pipeline for **extracting quantum chemical descriptors from Gaussian log files** and performing **regression analysis** to predict reaction rates (e.g., `ln(kobs)`) of azoarene compounds.
 
-![Regression_Plot](example.png)
-
 It includes:
 - A feature extraction engine (`extractor_regr.py`)
 - A demonstration notebook (`azoarene.ipynb`) to visualize and run the full workflow
