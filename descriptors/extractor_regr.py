@@ -619,10 +619,8 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     X_values = df[X_columns].values
     y_pred = np.dot(X_values, coefficients) + intercept
 
-    # 建立公式字串
     formula = f'{target} = {" + ".join([f"{c:.2f}({f})" for c, f in zip(coefficients, X_columns)])} + {intercept:.2f}'
 
-    # 只在 console 印公式
     print("Regression Formula:", formula)
 
     fig, ax = plt.subplots(figsize=(8, 7))
@@ -636,7 +634,6 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
-    # 其他統計指標 (保留)
     fig.text(0.55, 0.35, f'$R^2= {best_model["r2_full"]:.2f}$', fontsize=16)
     fig.text(0.55, 0.30, f'rmse = {best_model["rmse"]:.2f}', fontsize=16)
     fig.text(0.55, 0.25, f'$Q^2= {best_model["q2_loocv"]:.2f}$ (LOO)', fontsize=16)
@@ -676,10 +673,8 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
     print(f"\n[STEP1] Read Excel: {xlsx_path}")
     df = pd.read_excel(xlsx_path)
 
-    # ========== STEP 2: 建立唯一 Ar 特徵表 (unique_ar_df) ==========
     print(f"\n[STEP2] Extracting log features for each unique Ar...")
 
-    # 支援多欄 Ar1, Ar2, Ar3...；若無則使用單欄 Ar
     ar_cols = _canon_ar_cols(df)  # may rename to canonical Ar1, Ar2, ...
     if "Ar" in df.columns and not ar_cols:
         ar_series = df["Ar"].dropna()
@@ -698,12 +693,10 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
     unique_ar_df["log_exists"] = unique_ar_df["log_path"].apply(os.path.exists)
     unique_ar_df = unique_ar_df[unique_ar_df["log_exists"]].reset_index(drop=True)
 
-    # 若沒有任何可用的 Ar/log，直接結束
     if unique_ar_df.empty:
         print("⚠️ No valid Ar entries with matching log files. Stop.")
         return df, [], {}
 
-    # 萃取 log features for each unique Ar
     for index, row in unique_ar_df.iterrows():
         ar = row["Ar"]
         log_file = row["log_path"]
@@ -761,11 +754,9 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
             print(f"[ERROR] Error occurred while processing Ar={ar}: {e}")
             continue
 
-    # 加入 Sterimol
     unique_ar_df = add_sterimol_to_df(unique_ar_df, log_folder)
     report_index_problems(unique_ar_df, log_folder)
 
-    # ✅ 過濾掉任何關鍵特徵為 NaN 的 Ar
     essential_cols = [
         "Ar_NBO_C2", "Ar_NBO_=O", "Ar_NBO_-O", "Ar_v_C=O", "Ar_I_C=O", "Ar_dp",
         "Ar_polar", "Ar_LUMO", "Ar_HOMO", "L_C1_C2",
@@ -778,45 +769,36 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     unique_ar_df.to_excel("unique_ar_features.xlsx", index=False)
 
-    # ========== STEP 3: 合併特徵 ==========
     print(f"\n[STEP3] Merging features into main dataframe")
 
-    # 1) 偵測多欄 Ar
     ar_cols = _canon_ar_cols(df)  # e.g., ['Ar1','Ar2',...]
     logs_in_folder = _list_log_basenames(log_folder)
 
     if not ar_cols and "Ar" in df.columns:
-        # 單欄 Ar 相容處理
         df["Ar"] = df["Ar"].apply(_normalize_ar_value)
         df = df.merge(unique_ar_df, on="Ar", how="left")
         meta_exclude = {"Ar", "Ar_key", "log_path", "log_exists"}
         features = [c for c in unique_ar_df.columns if c not in meta_exclude]
     else:
-        # 多欄情境：先把所有 ArN 欄位正規化
         for c in ar_cols:
             df[c] = df[c].apply(_normalize_ar_value)
-        # 對每個 ArN 做 prefix merge
         for c in ar_cols:
             pref = f"{c}_"
             right = unique_ar_df.add_prefix(pref)
             df = df.merge(right, left_on=c, right_on=pref + "Ar_key", how="left")
-            # 丟掉 meta 欄，避免汙染特徵
             for m in (pref + "Ar", pref + "Ar_key", pref + "log_path", pref + "log_exists"):
                 if m in df.columns:
                     df.drop(columns=m, inplace=True)
-        # 特徵欄：所有 ArN_ 開頭，但排除 meta 尾碼
         feature_exclude_suffixes = ("_Ar", "_Ar_key", "_log_path", "_log_exists")
         features = [c for c in df.columns
                     if re.match(r"^Ar\d+_", c) and not any(c.endswith(suf) for suf in feature_exclude_suffixes)]
 
-    # ---- 診斷輸出 ----
     print(f"🔎 Detected Ar columns in sheet: {ar_cols if ar_cols else ['Ar']}")
     total_unique = unique_ar_df.shape[0]
     print(f"🗂️ Unique Ar with matching log files: {total_unique}")
     print(f"🧩 Total feature columns found: {len(features)}")
 
     if len(features) == 0:
-        # 嘗試列出缺檔的例子，幫助除錯
         missing = set()
         if ar_cols:
             seen = set()
@@ -829,32 +811,30 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
         if missing:
             print(f"⚠️ No feature columns produced. Examples of missing logs (first 5): {sorted(list(missing))[:5]}")
 
-    # 保存中間結果
     df.to_excel(output_path, index=False)
 
-    # ========== STEP 4: 建模 ==========
     print(f"\n[STEP4] Performing regression modeling")
 
     if not features:
-        print("⚠️ 無可用特徵欄位，結束。")
+        print("⚠️ No available feature columns, terminating process.")
         return df, [], {}
 
     df_model = df.dropna(subset=features + [target])
     if df_model.empty:
-        print("⚠️ 無可用資料進行回歸（刪缺失後無資料）。")
+        print("⚠️ No data available for regression (data exhausted after dropping missing values).")
         return df, [], {}
 
-    # 依 prefix 建 group（Ar1_... → Ar1）
+    # Automatically create groups based on the descriptor prefix (e.g., Ar1_... becomes group Ar1).
     groups = {}
     for col in features:
         g = col.split("_", 1)[0]
         groups.setdefault(g, []).append(col)
 
-    # 顯示每組特徵數
+    # Show feature count per group.
     for g, cols in groups.items():
         print(f"   • {g}: {len(cols)} features")
 
-    # Fallback：若沒有任何 group（理論上不會，但保險）
+    # Fallback: If no groups are detected (theoretically unlikely, but for safety).
     if not groups:
         print("⚠️ No groups detected. Falling back to ungrouped exhaustive search.")
         results, best_model = search_best_models(
@@ -870,11 +850,11 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
         if best_model:
             plot_best_regression(target, df_model, best_model, plot_path)
         else:
-            print("⚠️ 沒有符合條件的模型，跳過繪圖")
+            print("⚠️ No valid model found, skipping plot.")
         print("\n✅ Analysis complete!")
         return df, results, best_model
 
-    # 正式：多組平衡（每組至少 1，至多 3，可自行調整）
+    # Formal: Group-Constrained Regression (Balance across groups, e.g., 1-3 features per group, bounds are user-customizable).
     group_bounds = {g: (1, min(3, len(cols))) for g, cols in groups.items()}
     results, best_model = search_best_models_general(
         data=df_model,
@@ -893,8 +873,9 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
     if best_model:
         plot_best_regression(target, df_model, best_model, plot_path)
     else:
-        print("⚠️ 沒有符合條件的模型，跳過繪圖")
+        print("⚠️ No valid model found, skipping plot.")
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
 
