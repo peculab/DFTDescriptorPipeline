@@ -2,8 +2,6 @@
 
 This repository presents a complete pipeline for **predicting reactivity trends (e.g., `ln(kobs)`) in diaryl-substituted indigo compounds** using quantum chemical descriptors automatically extracted from Gaussian `.log` files.
 
-![Regression_Plot](example.png)
-
 It includes:
 - Descriptor extraction (NBO, HOMO/LUMO, dipole, polarizability, vibrational)
 - Sterimol parameter calculation via `morfeus-ml`
