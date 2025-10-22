@@ -38,6 +38,94 @@ try:
 except Exception:
     pass
 
+# ==== F/G fallback from geometry (paste near the top) ====
+import math
+
+COV_RAD = {"H":0.31,"C":0.76,"N":0.71,"O":0.66,"F":0.57,"S":1.05,"Cl":1.02,"Br":1.20,"I":1.39}
+
+def _dist(p, q):
+    return math.sqrt((p[0]-q[0])**2+(p[1]-q[1])**2+(p[2]-q[2])**2)
+
+def _bond_cutoff(el1, el2, scale=1.20):
+    r1 = COV_RAD.get(el1, 0.77); r2 = COV_RAD.get(el2, 0.77)
+    return scale*(r1+r2)
+
+def _build_connectivity(elements, coords):
+    n=len(elements); g=[set() for _ in range(n)]
+    for i in range(n):
+        for j in range(i+1,n):
+            if _dist(coords[i],coords[j]) <= _bond_cutoff(elements[i],elements[j]):
+                g[i].add(j); g[j].add(i)
+    return g
+
+def _last_standard_orientation(text):
+    blocks = text.split("Standard orientation:")
+    if len(blocks)<2: return None, None
+    tail = blocks[-1]; lines = tail.splitlines()
+    start=None
+    for k,ln in enumerate(lines):
+        if "---------------------------------------------------------------------" in ln:
+            start=k+2; break
+    if start is None: return None, None
+    elems, xyz=[], []
+    Z2E={1:"H",6:"C",7:"N",8:"O",9:"F",16:"S",17:"Cl",35:"Br",53:"I"}
+    for ln in lines[start:]:
+        if "---------------------------------------------------------------------" in ln: break
+        parts=ln.split()
+        if len(parts)<6: continue
+        atno=int(parts[1]); x,y,z = float(parts[3]), float(parts[4]), float(parts[5])
+        elems.append(Z2E.get(atno,"C")); xyz.append((x,y,z))
+    return elems, xyz
+
+def _shortest_co(elements, coords, g):
+    cand=[]
+    for c in range(len(elements)):
+        if elements[c]!="C": continue
+        for o in g[c]:
+            if elements[o]!="O": continue
+            cand.append((_dist(coords[c],coords[o]), c, o))
+    cand.sort()
+    if not cand: return None, None
+    _,ci,oi = cand[0]
+    return ci, oi
+
+def _find_ring6(g, start, avoid=None):
+    avoid = avoid or set()
+    stack=[(start,[start])]
+    while stack:
+        node, path = stack.pop()
+        if len(path)>6: continue
+        for nb in g[node]:
+            if nb in avoid: continue
+            if len(path)>=2 and nb==path[-2]: continue
+            if nb==path[0] and 3<len(path)<=6:
+                if len(path)==6: return set(path)
+                else: continue
+            if nb not in path: stack.append((nb, path+[nb]))
+    return None
+
+def _fg_on_ring(g, ring, c2):
+    nbrs=[v for v in g[c2] if v in ring]
+    if len(nbrs)>=2: return nbrs[0], nbrs[1]
+    return None, None
+
+def derive_fg_from_geometry(log_text):
+    """Return (c1, c2, f, g) by geometry fallback; any not-found is None."""
+    elems, xyz = _last_standard_orientation(log_text)
+    if not elems: return None, None, None, None
+    g = _build_connectivity(elems, xyz)
+    c1, _ = _shortest_co(elems, xyz, g)
+    if c1 is None: return None, None, None, None
+    # pick a carbon neighbor of C1 that lies on a 6-ring → C2
+    c2 = None; ring=None
+    for nb in [v for v in g[c1] if elems[v]=="C"]:
+        ring6 = _find_ring6(g, nb, avoid={c1})
+        if ring6: c2=nb; ring=ring6; break
+    if c2 is None: return c1, None, None, None
+    f, g2 = _fg_on_ring(g, ring, c2)
+    return c1, c2, f, g2
+# ==== end F/G fallback utilities ====
+
 # ============ Helpers (normalization, column detection, logs) ============
 
 def _normalize_ar_value(x):
@@ -706,6 +794,8 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
             homo, lumo = extract_homo_lumo(log_file)
             dipole_moment = extract_dipole_moment(log_file)
             nbo_content = extract_nbo_section(log_file)
+            with open(log_file, "r", errors="ignore") as fh:
+                log_text = fh.read() 
 
             Ar_c = Ar_e = Ar_a = None
             Ar_NBO_C2 = Ar_NBO_O1 = Ar_NBO_O2 = Ar_v_C_O = Ar_I_C_O = L_C1_C2 = None
@@ -715,6 +805,14 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
                 oh_atoms = find_oh_bonds(nbo_content)
                 c1, c2, a, b, d, f, g = find_c1_c2(nbo_content, oh_atoms)
                 Ar_c, Ar_e, Ar_a, Ar_b, Ar_d, Ar_f, Ar_g = c1, c2, a, b, d, f, g
+
+                if (Ar_f is None) or (Ar_g is None):
+                    c1_geo, c2_geo, f_geo, g_geo = derive_fg_from_geometry(log_text)
+                    if (Ar_c is None) and (c1_geo is not None): Ar_c = c1_geo
+                    if (Ar_e is None) and (c2_geo is not None): Ar_e = c2_geo
+                    if (Ar_f is None) and (f_geo  is not None): Ar_f = f_geo
+                    if (Ar_g is None) and (g_geo  is not None): Ar_g = g_geo
+
                 if c1 and c2 and a:
                     try:
                         occupancy_C1_O, energy_C1_O, occupancy_C1_C2, energy_C1_C2 = extract_nbo_values(log_file, c1, c2, a)
@@ -732,6 +830,9 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
                         coord_C1, coord_C2, L_C1_C2 = extract_coordinates(log_file, c1, c2)
                     except Exception:
                         pass
+            else:
+                c1_geo, c2_geo, f_geo, g_geo = derive_fg_from_geometry(log_text)
+                Ar_c, Ar_e, Ar_f, Ar_g = c1_geo, c2_geo, f_geo, g_geo
 
             unique_ar_df.at[index, "Ar_NBO_C2"] = Ar_NBO_C2
             unique_ar_df.at[index, "Ar_NBO_=O"] = Ar_NBO_O1
