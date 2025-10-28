@@ -427,7 +427,7 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     intercept = best_model['intercept']
     y_actual = df[target]; X_values = df[X_columns].values
     y_pred = np.dot(X_values, coefficients) + intercept
-    formula = f'{target} = ' + " + ".join([f\"{c:.2f}({f})\" for c, f in zip(coefficients, X_columns)]) + f' + {intercept:.2f}'
+    formula = f'{target} = ' + " + ".join([f"{c:.2f}({f})" for c, f in zip(coefficients, X_columns)]) + f' + {intercept:.2f}'
     print("Regression Formula:", formula)
     fig, ax = plt.subplots(figsize=(8,7))
     ax.set_facecolor('w'); ax.plot(y_actual, y_actual, color='k')
@@ -590,3 +590,4 @@ def extract_nbo_charges(log_file, c1, c2, a):
     Ar_NBO_O1 = charges.get(f"O{a-1}")
     Ar_NBO_O2 = charges.get(f"O{a}")
     return Ar_NBO_C1, Ar_NBO_C2, Ar_NBO_O1, Ar_NBO_O2
+
