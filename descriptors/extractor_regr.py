@@ -336,9 +336,10 @@ def derive_fg_from_geometry_robust(log_text, prefer_single_bonds=True):
     # F/G：C2 的兩個鄰居（排除 C1）
     neigh_c2 = g.get(C2, [])
     fg = [(n,ordr,sym) for (n,ordr,sym) in neigh_c2 if n != C1]
+    # ---- FIX: keep both single-bond carbons first, then the rest (all as ints) ----
     single_carbons = [n for (n,ordr,sym) in fg if ordr==1 and sym=='C']
     others = [n for (n,ordr,sym) in fg if n not in single_carbons]
-    ordered = single_carbons + [n for (n,_,_) in others]
+    ordered = single_carbons + others  # <- BUGFIX: 'others' already ints; don't unpack
     F = ordered[0] if len(ordered)>=1 else None
     G = ordered[1] if len(ordered)>=2 else None
 
@@ -439,7 +440,7 @@ def derive_fg_from_geometry(log_text, prefer_single_bonds=True):
     # 優先單鍵碳 → 其餘
     single_carbons = [n for (n,ordr,sym) in fg if ordr==1 and sym=='C']
     others = [n for (n,ordr,sym) in fg if n not in single_carbons]
-    ordered = single_carbons + [n for (n,_,_) in others]
+    ordered = single_carbons + others
 
     F = ordered[0] if len(ordered) >= 1 else None
     G = ordered[1] if len(ordered) >= 2 else None
@@ -1026,7 +1027,7 @@ def search_best_models_general(
         else:
             mins, maxs = [], []
             for gname, glist in zip(group_names, group_lists):
-                lo, hi = group_bounds.get(gname, (0, len(glist)))
+                lo, hi = group_bounds.get(gname, (1, len(glist)))
                 mins.append(max(0, lo))
                 maxs.append(min(len(glist), hi))
 
@@ -1400,5 +1401,3 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
-
-
