@@ -38,6 +38,182 @@ try:
 except Exception:
     pass
 
+# ==== BEGIN: geometry fallback parsers ====
+def _z_to_sym(Z):
+    # 常用元素表（可自行擴充）
+    table = {1:'H',6:'C',7:'N',8:'O',9:'F',15:'P',16:'S',17:'Cl',35:'Br',53:'I'}
+    return table.get(Z, 'X')
+
+def _parse_standard_or_input(text):
+    """
+    讀取最後一個 'Standard orientation:' 或 'Input orientation:' 區塊。
+    回傳: (elements: dict[idx->symbol], coords: dict[idx->(x,y,z)])
+    """
+    import re
+    pattern = (
+        r"(Standard|Input)\s+orientation:\s*?\n\s*-+\n"
+        r"\s*Center\s+Atomic\s+Atomic\s+Coordinates\s+\(Angstroms\)\s*\n"
+        r"\s*Number\s+Number\s+Type\s+X\s+Y\s+Z\s*\n\s*-+\n"
+        r"([\s\S]+?)\n\s*-+\n"
+    )
+    elems, coords = {}, {}
+    blocks = list(re.finditer(pattern, text, re.IGNORECASE))
+    if not blocks:
+        return elems, coords
+    block = blocks[-1].group(2)
+    for line in block.strip().splitlines():
+        parts = line.strip().split()
+        if len(parts) >= 6 and parts[0].isdigit() and parts[1].isdigit():
+            try:
+                idx = int(parts[0])
+                Z = int(parts[1])
+                x, y, z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+                elems[idx] = _z_to_sym(Z)
+                coords[idx] = (x, y, z)
+            except Exception:
+                pass
+    return elems, coords
+
+def _parse_checkpoint_structure(text):
+    """
+    讀取 'Structure from the checkpoint file' 的座標。
+    回傳: (elements: dict[idx->symbol], coords: dict[idx->(x,y,z)])
+    """
+    import re
+    m = re.search(r"Structure\s+from\s+the\s+checkpoint\s+file[\s\S]{0,2000}?Coordinates[\s\S]+?\n", text, re.IGNORECASE)
+    if not m:
+        return {}, {}
+    elems, coords = {}, {}
+    idx = 1
+    for ln in text[m.end():].splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if re.match(r"^-{3,}|^={3,}", s) or re.match(r"^(Charge|Multiplicity|Standard|Input)\b", s):
+            break
+        parts = s.split()
+        try:
+            # 支援 "n Sym x y z" 或 "Sym x y z"
+            if len(parts) >= 5 and parts[0].isdigit():
+                sym = parts[1]; x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+            else:
+                sym = parts[0]; x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+            elems[idx] = sym
+            coords[idx] = (x, y, z)
+            idx += 1
+        except Exception:
+            pass
+    return elems, coords
+
+def _last_standard_orientation(text):
+    # 先試 Standard/Input，失敗再試 checkpoint
+    elems, coords = _parse_standard_or_input(text)
+    if elems and coords:
+        return elems, coords
+    return _parse_checkpoint_structure(text)
+# ==== END: geometry fallback parsers ====
+
+
+# ==== BEGIN: connectivity (若你專案內已有 _build_connectivity / COV_RAD，可用現有的) ====
+# 簡化用共價半徑（Å）
+_COV = {'H':0.31,'C':0.76,'N':0.71,'O':0.66,'F':0.57,'P':1.07,'S':1.05,'Cl':1.02,'Br':1.20,'I':1.39,'X':0.80}
+
+def _dist(a,b):
+    import math
+    return math.sqrt((a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2)
+
+def _build_connectivity(elems, coords, scale=1.25):
+    """
+    以半徑和 * scale 為閾值建鄰接圖。
+    回傳: graph: dict[idx -> list[(nbr_idx, 'approx_single', sym) ...]]
+    """
+    idxs = sorted(coords.keys())
+    g = {i: [] for i in idxs}
+    for i in idxs:
+        for j in idxs:
+            if j <= i: 
+                continue
+            si, sj = elems.get(i, 'X'), elems.get(j, 'X')
+            ri = _COV.get(si, 0.80); rj = _COV.get(sj, 0.80)
+            cutoff = scale * (ri + rj)
+            if _dist(coords[i], coords[j]) <= cutoff:
+                # 近似當成單鍵
+                g[i].append((j, 1, sj))
+                g[j].append((i, 1, si))
+    return g
+# ==== END: connectivity ====
+
+
+# ==== BEGIN: derive F/G ====
+def derive_fg_from_geometry(log_text, prefer_single_bonds=True):
+    """
+    從 log 文字推回 C1/C2/F/G：
+    - 找 O–H / H–O → O（A），再找接 O 的碳 = C1
+    - 從 C1 找鄰碳 = C2
+    - 從 C2 的鄰居（排除 C1）中，優先挑單鍵碳兩個作 F、G
+    回傳: (C1, C2, F, G)（找不到則為 None）
+    """
+    import re
+
+    # 先抓 O–H
+    nbo = log_text  # 直接用全文即可；若想沿用你的 extract_nbo_section 亦可
+    oh = find_oh_bonds(nbo)
+    if not oh:
+        return None, None, None, None
+    O, H = oh[0]  # O,H
+
+    # 讀座標：Standard/Input → checkpoint
+    elems, coords = _last_standard_orientation(log_text)
+    if not coords:
+        return None, None, None, None
+
+    # 建鄰接
+    graph = _build_connectivity(elems, coords)
+
+    # C1：O 的鄰碳
+    neigh_o = graph.get(O, [])
+    c1_candidates = [n for (n,ordr,sym) in neigh_o if sym == 'C']
+    if not c1_candidates:
+        return None, None, None, None
+    if prefer_single_bonds:
+        singles = [n for (n,ordr,sym) in neigh_o if sym=='C' and ordr==1]
+        C1 = singles[0] if singles else c1_candidates[0]
+    else:
+        C1 = c1_candidates[0]
+
+    # C2：C1 的鄰碳（排除 O）
+    neigh_c1 = graph.get(C1, [])
+    c2_candidates = [n for (n,ordr,sym) in neigh_c1 if sym=='C' and n != O]
+    if not c2_candidates:
+        # 退而求其次：任何非 O 鄰居
+        c2_candidates = [n for (n,ordr,sym) in neigh_c1 if n != O]
+    if not c2_candidates:
+        return C1, None, None, None
+
+    if prefer_single_bonds:
+        singles = [n for (n,ordr,sym) in neigh_c1 if n in c2_candidates and ordr==1]
+        pool = singles if singles else c2_candidates
+    else:
+        pool = c2_candidates
+
+    # 以 degree 作 tie-break（偏向環上的 C）
+    C2 = sorted(pool, key=lambda n: len(graph.get(n, [])), reverse=True)[0]
+
+    # F/G：C2 的兩個鄰居（排除 C1）
+    neigh_c2 = graph.get(C2, [])
+    fg = [(n,ordr,sym) for (n,ordr,sym) in neigh_c2 if n != C1]
+
+    # 優先單鍵碳 → 其餘
+    single_carbons = [n for (n,ordr,sym) in fg if ordr==1 and sym=='C']
+    others = [n for (n,ordr,sym) in fg if n not in single_carbons]
+    ordered = single_carbons + [n for (n,_,_) in others]
+
+    F = ordered[0] if len(ordered) >= 1 else None
+    G = ordered[1] if len(ordered) >= 2 else None
+
+    return C1, C2, F, G
+# ==== END: derive F/G ====
+
 # ==== F/G fallback from geometry (paste near the top) ====
 import math
 
@@ -195,29 +371,31 @@ def extract_polarizability(log_file):
     return avg_polarizability
 
 
+# --- REPLACE THIS FUNCTION IN extractor_regr.py ---
 def extract_nbo_section(log_file):
+    import re
     with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
-    match = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)(-+\n)", content, re.DOTALL)
-    if match:
-        return match.group(1)
-    # Fallback: return full content so downstream regex can still find BD(...) lines outside Summary
+    m = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)(-+\n)", content, re.DOTALL)
+    if m:
+        return m.group(1)
+    # Fallback: 沒有 Summary 就回傳全文，讓 BD(...) 仍可被找到
     return content
 
-
+# --- REPLACE THIS FUNCTION IN extractor_regr.py ---
 def find_oh_bonds(nbo_section):
-    # Primary: O-H
-    oh_bonds = re.findall(r"BD \(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)", nbo_section)
-    if not oh_bonds:
-        # Fallback: H-O (swap to O,H)
-        ho_bonds = re.findall(r"BD \(\s*1\s*\)\s*H\s*(\d+)\s*-\s*O\s*(\d+)", nbo_section)
-        oh_bonds = [(o, h) for h, o in ho_bonds]
-    # unique, cast to int
+    import re
+    # O–H
+    oh = re.findall(r"BD \(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)", nbo_section)
+    # H–O（換成 O,H）
+    ho = re.findall(r"BD \(\s*1\s*\)\s*H\s*(\d+)\s*-\s*O\s*(\d+)", nbo_section)
+    oh += [(o, h) for h, o in ho]
+    # 去重 + 轉 int
     uniq, seen = [], set()
-    for a, b in oh_bonds:
+    for a,b in oh:
         a, b = int(a), int(b)
-        if (a, b) not in seen:
-            uniq.append((a, b)); seen.add((a, b))
+        if (a,b) not in seen:
+            uniq.append((a,b)); seen.add((a,b))
     return uniq
 
 def find_c1_c2(nbo_section, oh_bond_atoms):
@@ -989,3 +1167,4 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
