@@ -27,7 +27,7 @@ def safe_int(tok: Any) -> Optional[int]:
         except Exception: return None
     return None
 
-BD_LINE = re.compile(r'^\s*BD\(\s*\d+\s*\)\s+([A-Z][a-z]?)\s+(\d+)\s*-\s*([A-Z][a-z]?)\s+(\d+)\s*$')
+BD_LINE = re.compile(r'^\s*BD\s*\(\s*\d+\s*\)\s+([A-Z][a-z]?)\s+(\d+)\s*-\s*([A-Z][a-z]?)\s+(\d+)\s*$')
 COORD_LINE = re.compile(r'^\s*(\d+)\s+([A-Z][a-z]?|\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)')
 
 _Z2E = {1:"H",6:"C",7:"N",8:"O",9:"F",15:"P",16:"S",17:"Cl",35:"Br",53:"I"}
@@ -100,18 +100,21 @@ def _parse_center_coords(text: str):
     return elems, coords
 
 # ---------- OH + Robust FG ----------
+
 def find_oh_bonds(text: str):
-    # Only BD(1) O i - H j lines
+    # Permissive: match "BD ( 1)  O <i> - H <j>" anywhere in line, flexible spacing
     pairs = []
     for line in text.splitlines():
-        if "BD" not in line: continue
-        m = re.match(r'^\s*BD\(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)\s*$', line)
-        if not m: continue
+        if "BD" not in line or "O" not in line or "H" not in line:
+            continue
+        m = re.search(r'BD\s*\(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)', line)
+        if not m:
+            continue
         oi, hi = safe_int(m.group(1)), safe_int(m.group(2))
-        if oi is None or hi is None: continue
+        if oi is None or hi is None:
+            continue
         pairs.append((oi, hi))
     return pairs
-
 def derive_fg_from_geometry_robust(text: str, prefer_single_bonds: bool=True):
     oh = find_oh_bonds(text)
     if not oh:
@@ -560,7 +563,41 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
             C1=C2=F=G=None; elems=coords=None
             try:
                 C1,C2,F,G,elems,coords = derive_fg_from_geometry_robust(log_text)
-            except Exception: pass
+                ohs = find_oh_bonds(log_text)
+                print(f"      [DBG] OH found: {len(ohs)} | C1={C1}, C2={C2}, F={F}, G={G}")
+                if C1 is None or C2 is None or F is None or G is None:
+                    bonds_dbg = _extract_bd_bonds_anywhere(log_text)
+                    print(f"      [DBG] BD edges: {len(bonds_dbg)} | F/G missing -> trying fallback")
+                    # permissive fallback
+                    try:
+                        g_all = _bond_graph_from_bd(bonds_dbg)
+                        # pick an oxygen that has at least one H neighbor
+                        oh_guess = None
+                        for node, neighs in g_all.items():
+                            if any(sym=='H' for (_,_,sym) in neighs):
+                                # heuristically assume this node is O; proceed
+                                oh_guess = node; break
+                        if oh_guess is not None:
+                            cands = [(n,ordr,sym) for (n,ordr,sym) in g_all.get(oh_guess, []) if sym=='C']
+                            if cands:
+                                singles = [n for (n,ordr,_) in cands if ordr==1]
+                                C1 = (singles[0] if singles else cands[0][0]) if C1 is None else C1
+                                neigh = [(n,ordr,sym) for (n,ordr,sym) in g_all.get(C1, []) if n != oh_guess]
+                                carb = [n for (n,ordr,sym) in neigh if sym=='C']
+                                pool = carb or [n for (n,_,_) in neigh]
+                                if pool:
+                                    C2 = (sorted(pool, key=lambda n: len(g_all.get(n, [])), reverse=True)[0]) if C2 is None else C2
+                                    fg = [(n,ordr,sym) for (n,ordr,sym) in g_all.get(C2, []) if n != C1]
+                                    singles2 = [n for (n,ordr,sym) in fg if (ordr==1 and sym=='C')]
+                                    others2  = [n for (n,ordr,sym) in fg if n not in singles2]
+                                    ordered2 = singles2 + others2
+                                    if F is None and len(ordered2)>=1: F = ordered2[0]
+                                    if G is None and len(ordered2)>=2: G = ordered2[1]
+                        print(f"      [DBG] Fallback FG -> C1={C1}, C2={C2}, F={F}, G={G}")
+                    except Exception as ee:
+                        print(f"      [DBG] fallback error: {ee}")
+            except Exception as e:
+                print(f"      [DBG] robust FG error: {e}")
 
             # If NBO section exists, try to refine indices (but DO NOT fall back to 'last found values')
             nbo = extract_nbo_section(log_file)
@@ -625,7 +662,15 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
         features = [c for c in df.columns if re.match(r"^Ar\d+_", c) and not any(c.endswith(s) for s in feature_ex_suffix)]
 
     # Final numeric coercion
-    for col in ["Ar_f","Ar_g"] + [c for c in df.columns if c.endswith(("_Ar_f","_Ar_g"))]:
+    cols_to_cast = []
+    
+    base_cols = ["Ar_f","Ar_g"]
+    for bc in base_cols:
+        if bc in df.columns:
+            cols_to_cast.append(bc)
+    suffix_cols = [c for c in df.columns if c.endswith(("_Ar_f","_Ar_g"))]
+    cols_to_cast.extend(suffix_cols)
+    for col in cols_to_cast:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df.to_excel(output_path, index=False)
