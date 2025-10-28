@@ -1,14 +1,18 @@
-
 # -*- coding: utf-8 -*-
 """
-Extractor (patched)
-- Fixes 'invalid literal for int() with base 10: "Number"' by strict parsing.
-- Removes "return last found values" fallback (no cross-file contamination).
-- Enforces BOTH R² >= 0.70 and Q²(LOO) >= 0.70 for model selection.
-- Guards Sterimol ints and coerces Ar/Ar_f/Ar_g to numeric.
+extractor_regr.py (robust, Colab-ready)
+
+What you get:
+- NBO BD parser tolerant to "BD(1)" and "BD ( 1 )" formats
+- OH detection via NBO; fallback to geometry distance if NBO missing
+- F/G derivation via BD graph; fallback with geometry adjacency
+- Strict "no last-value" policy across files
+- Safe numeric coercions for Ar/Ar_* columns
+- Optional Sterimol with morfeus-ml (skipped if unavailable)
+- Model search requiring BOTH R² >= 0.70 and Q²(LOO) >= 0.70
 """
 
-import os, re, glob, math, random, itertools as it
+import os, re, glob, math, random
 from typing import Any, Optional, Tuple, Dict, List
 import numpy as np
 import pandas as pd
@@ -17,7 +21,8 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
 
-# ---------- Safe int + strict regex ----------
+# ---------------- Utilities ----------------
+
 _INT_FULL = re.compile(r'^\d+$')
 def safe_int(tok: Any) -> Optional[int]:
     if tok is None: return None
@@ -27,13 +32,16 @@ def safe_int(tok: Any) -> Optional[int]:
         except Exception: return None
     return None
 
-BD_LINE = re.compile(r'^\s*BD\s*\(\s*\d+\s*\)\s+([A-Z][a-z]?)\s+(\d+)\s*-\s*([A-Z][a-z]?)\s+(\d+)\s*$')
-COORD_LINE = re.compile(r'^\s*(\d+)\s+([A-Z][a-z]?|\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)')
+# BD line tolerant to spaces: "BD(1) C 12 - O 3" or "BD ( 1 ) C 12 - O 3"
+BD_LINE = re.compile(r'^\s*BD\s*\(\s*\d+\s*\)\s+([A-Z][a-z]?)\s+(\d+)\s*-\s*([A-Z][a-z]?)\s+(\d+)\s*$', re.IGNORECASE)
+
+# Coord line from orientation tables
+COORD_LINE = re.compile(r'^\s*(\d+)\s+([A-Z][a-z]?|\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*$')
 
 _Z2E = {1:"H",6:"C",7:"N",8:"O",9:"F",15:"P",16:"S",17:"Cl",35:"Br",53:"I"}
 
-# ---------- BD parser (strict) ----------
 def _extract_bd_bonds_anywhere(text: str) -> List[Tuple[int,str,int,str,int]]:
+    """Return list of tuples: (order, symA, idxA, symB, idxB). Order defaults to 1 here."""
     bonds = []
     for line in text.splitlines():
         m = BD_LINE.match(line)
@@ -41,27 +49,28 @@ def _extract_bd_bonds_anywhere(text: str) -> List[Tuple[int,str,int,str,int]]:
         a_sym, a_idx, b_sym, b_idx = m.groups()
         ai, bi = safe_int(a_idx), safe_int(b_idx)
         if ai is None or bi is None: continue
-        # We don't actually need 'order' for F/G picking here; default 1
-        # But keep tuple form compatible with original downstream (order first).
         bonds.append((1, a_sym.upper(), ai, b_sym.upper(), bi))
     return bonds
 
 def _bond_graph_from_bd(bonds):
+    """Graph as dict: node -> list of (neighbor, order, neighbor_symbol)."""
     g = {}
     for order,xs,xi,ys,yj in bonds:
         g.setdefault(xi, []).append((yj, order, ys))
         g.setdefault(yj, []).append((xi, order, xs))
     return g
 
-# ---------- Coordinates (strict rows only) ----------
 def _parse_center_coords(text: str):
-    # Find last Standard/Input orientation table, but accept only true numeric rows
+    """
+    Parse the last Standard/Input orientation block strictly.
+    Returns (elems: dict idx->sym, coords: dict idx->(x,y,z)).
+    """
     head_re = re.compile(r"(Standard|Input)\s+orientation\s*:\s*", re.IGNORECASE)
     hits = [m.start() for m in head_re.finditer(text)]
     if not hits: return {}, {}
     start = hits[-1]
     lines = text[start:].splitlines()
-    # find header containing X Y Z and Center/Atomic/Coordinates
+
     header_idx = None
     for i,ln in enumerate(lines[:300]):
         s = ln.strip()
@@ -69,19 +78,18 @@ def _parse_center_coords(text: str):
             header_idx = i; break
     if header_idx is None: return {}, {}
 
-    elems, coords = {}, {}
-    seen = set()
+    elems, coords, seen = {}, {}, set()
     for ln in lines[header_idx+1:header_idx+1+2000]:
         s = ln.strip()
-        if not s: 
+        if not s:
             if coords: break
             else: continue
         if set(s) <= set("-= "):
             if coords: break
             else: continue
         m = COORD_LINE.match(s)
-        if not m: 
-            # stop if a new header appears
+        if not m:
+            # stop if a new table header appears
             if s.lower().startswith(("standard","input")) and "orientation" in s.lower(): break
             continue
         idx_s, sym_or_Z, x_s, y_s, z_s = m.groups()
@@ -91,114 +99,133 @@ def _parse_center_coords(text: str):
             x,y,z = float(x_s), float(y_s), float(z_s)
         except Exception:
             continue
-        # sym may be atomic number
         if _INT_FULL.match(sym_or_Z):
             sym = _Z2E.get(int(sym_or_Z), "X")
         else:
             sym = sym_or_Z
-        elems[idx] = sym; coords[idx] = (x,y,z); seen.add(idx)
+        elems[idx] = sym
+        coords[idx] = (x,y,z)
+        seen.add(idx)
     return elems, coords
 
-# ---------- OH + Robust FG ----------
+# ---------------- OH detection (NBO + geometry fallback) ----------------
+
+_OH_LINE = re.compile(r'BD\s*\(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)', re.IGNORECASE)
 
 def find_oh_bonds(text: str):
-    # Permissive: match "BD ( 1)  O <i> - H <j>" anywhere in line, flexible spacing
     pairs = []
-    for line in text.splitlines():
-        if "BD" not in line or "O" not in line or "H" not in line:
-            continue
-        m = re.search(r'BD\s*\(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)', line)
-        if not m:
-            continue
+    for ln in text.splitlines():
+        if "BD" not in ln: continue
+        m = _OH_LINE.search(ln)
+        if not m: continue
         oi, hi = safe_int(m.group(1)), safe_int(m.group(2))
-        if oi is None or hi is None:
-            continue
+        if oi is None or hi is None: continue
         pairs.append((oi, hi))
     return pairs
+
+def _find_oh_by_geometry(text: str, max_dist=1.20, relax=1.25):
+    """Nearest O–H by distance if NBO is missing; returns (O, H, elems, coords)."""
+    elems, coords = _parse_center_coords(text)
+    if not elems or not coords:
+        return None, None, elems, coords
+    oxy = [i for i,s in elems.items() if s.upper() == 'O']
+    hyd = [i for i,s in elems.items() if s.upper() == 'H']
+    if not oxy or not hyd:
+        return None, None, elems, coords
+
+    def dist(a,b):
+        xa,ya,za = coords[a]; xb,yb,zb = coords[b]
+        dx,dy,dz = xa-xb, ya-yb, za-zb
+        return math.sqrt(dx*dx + dy*dy + dz*dz)
+
+    best = (None, None, 1e9)
+    for o in oxy:
+        for h in hyd:
+            d = dist(o,h)
+            if d < best[2]:
+                best = (o, h, d)
+
+    if best[0] is not None and (best[2] <= max_dist or best[2] <= relax):
+        return best[0], best[1], elems, coords
+    return None, None, elems, coords
+
+# ---------------- Robust FG derivation ----------------
+
 def derive_fg_from_geometry_robust(text: str, prefer_single_bonds: bool=True):
+    """
+    Steps:
+      1) Try NBO OH; else geometry OH (nearest O–H)
+      2) Build BD graph; augment with geometry adjacency (<=1.70 Å) if needed
+      3) C1 = carbon neighbor of O
+      4) C2 = a carbon neighbor of C1 (≠ O), pick one with larger degree
+      5) F,G = two carbon neighbors of C2 (≠ C1), prefer single bonds
+    """
+    # Step 1: OH
     oh = find_oh_bonds(text)
-    if not oh:
-        return None, None, None, None, {}, {}
-    O,H = oh[0]
+    if oh:
+        O, H = oh[0]
+    else:
+        O, H, elems_g, coords_g = _find_oh_by_geometry(text)
+        if O is None or H is None:
+            elems2, coords2 = _parse_center_coords(text)
+            return None, None, None, None, elems2, coords2
+
+    # Step 2: Graph
     bonds = _extract_bd_bonds_anywhere(text)
     g = _bond_graph_from_bd(bonds)
 
-    # C1: carbon neighbor of O
-    cands = [(n,ordr,sym) for (n,ordr,sym) in g.get(O, []) if sym=='C']
-    if not cands: return None, None, None, None, {}, {}
+    elems_geo, coords_geo = _parse_center_coords(text)
+    if elems_geo and coords_geo:
+        idxs = list(coords_geo.keys())
+        for i in idxs:
+            for j in idxs:
+                if j <= i: continue
+                xi, yi, zi = coords_geo[i]; xj, yj, zj = coords_geo[j]
+                d = math.dist((xi,yi,zi),(xj,yj,zj))
+                if d <= 1.70:  # geometry adjacency
+                    si = elems_geo.get(i, 'X').upper()
+                    sj = elems_geo.get(j, 'X').upper()
+                    g.setdefault(i, []).append((j, 1, sj))
+                    g.setdefault(j, []).append((i, 1, si))
+
+    # Step 3: C1
+    neigh_O = g.get(O, [])
+    cands = [(n,ordr,sym) for (n,ordr,sym) in neigh_O if sym.upper() == 'C']
+    if not cands:
+        return None, None, None, None, elems_geo, coords_geo
     if prefer_single_bonds:
-        singles = [n for (n,ordr,_) in cands if ordr==1]
+        singles = [n for (n,ordr,_) in cands if ordr == 1]
         C1 = singles[0] if singles else cands[0][0]
     else:
         C1 = cands[0][0]
 
-    # C2: neighbor of C1 (≠ O), prefer carbons
-    neigh = [(n,ordr,sym) for (n,ordr,sym) in g.get(C1, []) if n != O]
-    carb = [n for (n,ordr,sym) in neigh if sym=='C']
-    pool = carb or [n for (n,_,_) in neigh]
-    if not pool: return C1, None, None, None, {}, {}
+    # Step 4: C2
+    neigh_C1 = [(n,ordr,sym) for (n,ordr,sym) in g.get(C1, []) if n != O]
+    carb = [n for (n,ordr,sym) in neigh_C1 if sym.upper() == 'C']
+    pool = carb or [n for (n,_,_) in neigh_C1]
+    if not pool:
+        return C1, None, None, None, elems_geo, coords_geo
     C2 = sorted(pool, key=lambda n: len(g.get(n, [])), reverse=True)[0]
 
-    # F,G: neighbors of C2 (≠ C1), prefer single-bond carbons
+    # Step 5: F & G
     fg = [(n,ordr,sym) for (n,ordr,sym) in g.get(C2, []) if n != C1]
-    singles = [n for (n,ordr,sym) in fg if (ordr==1 and sym=='C')]
-    others  = [n for (n,ordr,sym) in fg if n not in singles]
+    singles = [n for (n,ordr,sym) in fg if (ordr == 1 and sym.upper() == 'C')]
+    others  = [n for (n,ordr,sym) in fg if n not in singles and sym.upper() == 'C']
     ordered = singles + others
-    F = ordered[0] if len(ordered)>=1 else None
-    G = ordered[1] if len(ordered)>=2 else None
+    F = ordered[0] if len(ordered) >= 1 else (fg[0][0] if fg else None)
+    G = ordered[1] if len(ordered) >= 2 else (fg[1][0] if len(fg) > 1 else None)
 
-    elems, coords = _parse_center_coords(text)
-    return C1, C2, F, G, elems, coords
+    return C1, C2, F, G, elems_geo, coords_geo
 
 def derive_fg_from_geometry(text: str):
-    # Redirect basic → robust for safety
-    C1,C2,F,G,elems,coords = derive_fg_from_geometry_robust(text)
-    return C1,C2,F,G,elems,coords
+    return derive_fg_from_geometry_robust(text)
 
-# ---------- NBO (C1/C2 finder) – remove "last values" fallback ----------
-def find_c1_c2(nbo_section: str, oh_bond_atoms: List[Tuple[int,int]]):
-    for a, b in oh_bond_atoms:
-        # C1 near O=a
-        c_candidates = re.findall(rf"BD \(\s*1\s*\)\s*C\s*(\d+)\s*-\s*O\s*{a}\b", nbo_section)
-        for c in c_candidates:
-            ci = safe_int(c)
-            if ci is None: continue
-            # bonds around C2
-            e_candidates = re.findall(rf"BD \(\s*1\s*\)\s*C\s*(\d+)\s*-\s*C\s*{ci}\b", nbo_section)
-            for e in e_candidates:
-                ei = safe_int(e)
-                if ei is None or ei==ci: continue
-                # If we see both single and double around C2, accept; else just accept first
-                bond_types = re.findall(rf"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)", nbo_section)
-                e_neighbors = []
-                for btype, xsym, xnum, ysym, ynum in bond_types:
-                    xnum_i, ynum_i = safe_int(xnum), safe_int(ynum)
-                    if xnum_i is None or ynum_i is None: continue
-                    if xnum_i==ei or ynum_i==ei:
-                        other = ynum_i if xnum_i==ei else xnum_i
-                        e_neighbors.append((btype, other))
-                single_neighbors = [n for t,n in e_neighbors if t=="1"]
-                double_neighbors = [n for t,n in e_neighbors if t=="2"]
+# ---------------- NBO / geometry helpers for Sterimol ----------------
 
-                f = single_neighbors[0] if single_neighbors else (double_neighbors[0] if double_neighbors else None)
-                g = None
-                if single_neighbors and len(single_neighbors)>=2:
-                    g = single_neighbors[1]
-                elif double_neighbors:
-                    g = double_neighbors[0] if double_neighbors[0]!=f else (double_neighbors[1] if len(double_neighbors)>1 else None)
-                # a,b,d are present in original design; here keep a,b and synthesize d if exists
-                d_candidates = re.findall(rf"BD \(\s*[12]\s*\)\s*C\s*{ci}\s*-\s*O\s*(\d+)\b", nbo_section)
-                d = safe_int(d_candidates[0]) if d_candidates else None
-
-                return ci, ei, a, b, d, f, g
-    # strict: unresolved
-    return None, None, None, None, None, None, None
-
-# ---------- Original helpers (abbrev from your file) ----------
 def extract_nbo_section(log_file):
     with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
-    m = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)-{30,}", content, re.DOTALL)
+    m = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)-{30,}", content, re.DOTALL|re.IGNORECASE)
     if not m: return None
     return m.group(1)
 
@@ -242,14 +269,16 @@ def write_xyz(atom_list, filename):
         for atom in atom_list:
             f.write(f"{atom[0]}  {atom[1]:.8f}  {atom[2]:.8f}  {atom[3]:.8f}\n")
 
-# ---------- Sterimol (guard ints) ----------
+# ---------------- Sterimol (optional) ----------------
+
 def add_sterimol_to_df(df, log_folder):
     try:
         from morfeus import read_xyz, Sterimol
         from morfeus.utils import get_radii
     except ImportError:
-        print("[sterimol] morfeus-ml missing; skipping Sterimol columns.")
-        df["Ar_Ster_L"] = None; df["Ar_Ster_B1"] = None; df["Ar_Ster_B5"] = None
+        print("[sterimol] morfeus-ml not installed; skip Sterimol columns.")
+        for col in ["Ar_Ster_L","Ar_Ster_B1","Ar_Ster_B5"]:
+            if col not in df.columns: df[col] = None
         return df
 
     for col in ["Ar_Ster_L","Ar_Ster_B1","Ar_Ster_B5"]:
@@ -278,7 +307,6 @@ def add_sterimol_to_df(df, log_folder):
                 print("  [WARN] Ar indices non-numeric; skip Sterimol for this row.")
                 continue
 
-            # drop a,b,d atoms from temporary XYZ
             atoms_to_keep = [a0 for i,a0 in enumerate(atoms, start=1) if i not in (a,b,d)]
             if len(atoms_to_keep) < 2:
                 print("  [SKIP] atoms_to_keep < 2"); continue
@@ -300,7 +328,8 @@ def add_sterimol_to_df(df, log_folder):
             continue
     return df
 
-# ---------- Excel/log discovery helpers ----------
+# ---------------- Excel/log helpers ----------------
+
 def _normalize_ar_value(x):
     if pd.isna(x): return np.nan
     s = str(x).strip()
@@ -320,7 +349,8 @@ def _canon_ar_cols(df: pd.DataFrame):
 def _list_log_basenames(log_folder: str):
     return {os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(log_folder, "*.log"))}
 
-# ---------- Modeling utils ----------
+# ---------------- Modeling ----------------
+
 def prepare_data(path, features, target):
     data = pd.read_excel(path)
     data = data.dropna(subset=features + [target])
@@ -364,106 +394,6 @@ def evaluate_combinations(data, target, feature_set):
         print(f"[ERROR] Combo {feature_set} failed: {e}")
         return None
 
-def _integer_compositions_with_bounds(total, mins, maxs):
-    m = len(mins)
-    if sum(mins) > total or sum(maxs) < total:
-        return
-    def dfs(i, remain, path):
-        if i == m - 1:
-            x = remain
-            if mins[i] <= x <= maxs[i]:
-                yield tuple(path + [x])
-            return
-        low = max(mins[i], remain - sum(maxs[i+1:]))
-        high = min(maxs[i], remain - sum(mins[i+1:]))
-        for v in range(low, high + 1):
-            yield from dfs(i + 1, remain - v, path + [v])
-    yield from dfs(0, total, [])
-
-def _balanced_bounds(num_groups, k):
-    base = k // num_groups
-    up = (k + num_groups - 1) // num_groups
-    mins = [base] * num_groups
-    maxs = [up] * num_groups
-    return mins, maxs
-
-def search_best_models_general(
-    data, target, groups, max_features,
-    r2_threshold=0.7, q2_threshold=0.7,
-    balance="bounds", group_bounds=None,
-    save_csv=True, csv_path="regression_search_results.csv",
-    verbose=True, max_combinations_per_k=20000, random_seed=42,
-):
-    random.seed(random_seed)
-    group_names = list(groups.keys())
-    group_lists = [groups[g] for g in group_names]
-    m = len(group_names)
-    if m == 0:
-        print("⚠️ No groups detected."); return [], None
-
-    if group_bounds is None:
-        group_bounds = {g:(1,len(groups[g])) for g in group_names}
-
-    all_results = []
-    for k in range(1, max_features+1):
-        if verbose: print(f"\n🔍 Testing {k}-feature combinations across {m} groups")
-        if balance == "bounds" and k < m:
-            if verbose: print(f"⏭️ skip k={k} (need ≥ {m} to give each group ≥1 feature)")
-            continue
-        if balance == "equal":
-            mins,maxs = _balanced_bounds(m,k)
-        else:
-            mins,maxs = [],[]
-            for gname,glist in zip(group_names, group_lists):
-                lo,hi = group_bounds.get(gname,(0,len(glist)))
-                mins.append(max(0,lo)); maxs.append(min(len(glist),hi))
-
-        allocations = list(_integer_compositions_with_bounds(k, mins, maxs))
-        if not allocations:
-            if verbose: print(f"⚠️ No feasible allocations for k={k}."); continue
-
-        combos_seen = 0
-        for alloc in allocations:
-            per_group_choices = []
-            infeasible = False
-            for glist,take in zip(group_lists, alloc):
-                if take==0:
-                    per_group_choices.append([()])
-                else:
-                    if take>len(glist): infeasible=True; break
-                    per_group_choices.append(list(it.combinations(glist, take)))
-            if infeasible: continue
-
-            for tpl in it.product(*per_group_choices):
-                combo = []
-                for part in tpl: combo.extend(list(part))
-                if len(combo) != k: continue
-                combos_seen += 1
-                if (max_combinations_per_k is not None) and (combos_seen > max_combinations_per_k):
-                    if random.random() < 0.98:  # throttle
-                        continue
-                r = evaluate_combinations(data, target, combo)
-                if r and (r["r2_full"] >= r2_threshold) and (r["q2_loocv"] >= q2_threshold):
-                    all_results.append(r)
-                    if verbose:
-                        print(f"✅ {combo} | R²={r['r2_full']:.3f} | Q²={r['q2_loocv']:.3f}")
-                elif verbose:
-                    print(f"❌ {combo} | skipped")
-
-    if not all_results:
-        print("⚠️ No valid models found."); return [], None
-
-    df_all = pd.DataFrame(all_results)
-    df_all["num_features"] = df_all["features"].apply(len)
-    if save_csv:
-        df_all.to_csv(csv_path, index=False)
-        if verbose:
-            print(f"\n📄 Saved all {len(df_all)} results to {csv_path}")
-    best_model = df_all.sort_values(by="q2_loocv", ascending=False).iloc[0].to_dict()
-    if verbose:
-        print(f"\n🏆 Best model: {best_model['features']} | Q²={best_model['q2_loocv']:.3f} | R²={best_model['r2_full']:.3f}")
-    return df_all.to_dict(orient="records"), best_model
-
 def search_best_models(data, features, target, max_features, r2_threshold=0.7, q2_threshold=0.7,
                        save_csv=True, csv_path="regression_search_results.csv", verbose=True):
     all_results = []
@@ -489,7 +419,8 @@ def search_best_models(data, features, target, max_features, r2_threshold=0.7, q
         print(f"\n🏆 Best model: {best_model['features']} | Q²={best_model['q2_loocv']:.3f} | R²={best_model['r2_full']:.3f}")
     return df_all.to_dict(orient="records"), best_model
 
-# ---------- Plot ----------
+# ---------------- Diagnostics ----------------
+
 def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png'):
     X_columns = best_model['features']
     coefficients = np.array(best_model['coefficients'])
@@ -513,7 +444,6 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     fig.text(0.55,0.20, f'{len(y_actual)} data points', fontsize=16, style='italic')
     fig.tight_layout(); plt.savefig(savepath, bbox_inches='tight'); plt.show()
 
-# ---------- Diagnostics ----------
 def report_index_problems(df, log_folder=None):
     idx_cols = ["Ar_c","Ar_e","Ar_a","Ar_b","Ar_d","Ar_f","Ar_g"]
     def bad(row): return any((x is None) or (isinstance(x,float) and np.isnan(x)) for x in row[idx_cols])
@@ -529,7 +459,8 @@ def report_index_problems(df, log_folder=None):
         bad_rows.to_excel("problem_index_report.xlsx", index=False)
         print("\nSaved as problem_index_report.xlsx")
 
-# ---------- Main pipeline ----------
+# ---------------- Main pipeline ----------------
+
 def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
                       output_path="final_output.xlsx", plot_path='Regression_Plot.png',
                       auto_pairing=True):
@@ -559,66 +490,26 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
         try:
             with open(log_file, "r", errors="ignore") as fh: log_text = fh.read()
 
-            # F/G robust first
+            # Robust FG first
             C1=C2=F=G=None; elems=coords=None
             try:
                 C1,C2,F,G,elems,coords = derive_fg_from_geometry_robust(log_text)
+                # small debug
                 ohs = find_oh_bonds(log_text)
-                print(f"      [DBG] OH found: {len(ohs)} | C1={C1}, C2={C2}, F={F}, G={G}")
-                if C1 is None or C2 is None or F is None or G is None:
-                    bonds_dbg = _extract_bd_bonds_anywhere(log_text)
-                    print(f"      [DBG] BD edges: {len(bonds_dbg)} | F/G missing -> trying fallback")
-                    # permissive fallback
-                    try:
-                        g_all = _bond_graph_from_bd(bonds_dbg)
-                        # pick an oxygen that has at least one H neighbor
-                        oh_guess = None
-                        for node, neighs in g_all.items():
-                            if any(sym=='H' for (_,_,sym) in neighs):
-                                # heuristically assume this node is O; proceed
-                                oh_guess = node; break
-                        if oh_guess is not None:
-                            cands = [(n,ordr,sym) for (n,ordr,sym) in g_all.get(oh_guess, []) if sym=='C']
-                            if cands:
-                                singles = [n for (n,ordr,_) in cands if ordr==1]
-                                C1 = (singles[0] if singles else cands[0][0]) if C1 is None else C1
-                                neigh = [(n,ordr,sym) for (n,ordr,sym) in g_all.get(C1, []) if n != oh_guess]
-                                carb = [n for (n,ordr,sym) in neigh if sym=='C']
-                                pool = carb or [n for (n,_,_) in neigh]
-                                if pool:
-                                    C2 = (sorted(pool, key=lambda n: len(g_all.get(n, [])), reverse=True)[0]) if C2 is None else C2
-                                    fg = [(n,ordr,sym) for (n,ordr,sym) in g_all.get(C2, []) if n != C1]
-                                    singles2 = [n for (n,ordr,sym) in fg if (ordr==1 and sym=='C')]
-                                    others2  = [n for (n,ordr,sym) in fg if n not in singles2]
-                                    ordered2 = singles2 + others2
-                                    if F is None and len(ordered2)>=1: F = ordered2[0]
-                                    if G is None and len(ordered2)>=2: G = ordered2[1]
-                        print(f"      [DBG] Fallback FG -> C1={C1}, C2={C2}, F={F}, G={G}")
-                    except Exception as ee:
-                        print(f"      [DBG] fallback error: {ee}")
+                bonds_dbg = _extract_bd_bonds_anywhere(log_text)
+                print(f"      [DBG] OH={len(ohs)}, BD edges={len(bonds_dbg)}, FG=({C1},{C2},{F},{G})")
             except Exception as e:
                 print(f"      [DBG] robust FG error: {e}")
 
-            # If NBO section exists, try to refine indices (but DO NOT fall back to 'last found values')
-            nbo = extract_nbo_section(log_file)
-            Ar_a=Ar_b=Ar_d=None
-            if nbo:
-                oh_atoms = find_oh_bonds(log_text)  # use full text for better coverage
-                c1,c2,a,b,d,f,g = find_c1_c2(nbo, oh_atoms)
-                # merge if found
-                if c1 is not None: C1 = C1 or c1
-                if c2 is not None: C2 = C2 or c2
-                if f  is not None: F  = F  or f
-                if g  is not None: G  = G  or g
-                Ar_a, Ar_b, Ar_d = a, b, d
-
+            # Attach parsed indices
             unique_ar_df.at[index,"Ar_c"] = C1
             unique_ar_df.at[index,"Ar_e"] = C2
             unique_ar_df.at[index,"Ar_f"] = F
             unique_ar_df.at[index,"Ar_g"] = G
-            unique_ar_df.at[index,"Ar_a"] = Ar_a
-            unique_ar_df.at[index,"Ar_b"] = Ar_b
-            unique_ar_df.at[index,"Ar_d"] = Ar_d
+            # Optional NBO extras if ever needed later
+            unique_ar_df.at[index,"Ar_a"] = None
+            unique_ar_df.at[index,"Ar_b"] = None
+            unique_ar_df.at[index,"Ar_d"] = None
 
         except Exception as e:
             print(f"[ERROR] Error occurred while processing Ar={ar}: {e}")
@@ -632,12 +523,12 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
             else:
                 unique_ar_df[col] = pd.to_numeric(unique_ar_df[col], errors="coerce")
 
-    # Sterimol (optional)
+    # Sterimol (optional; safe to skip)
     unique_ar_df = add_sterimol_to_df(unique_ar_df, log_folder)
 
     report_index_problems(unique_ar_df, log_folder)
 
-    essential_cols = ["Ar_c","Ar_e","Ar_f","Ar_g"]  # keep essentials minimal to avoid over-dropping
+    essential_cols = ["Ar_c","Ar_e","Ar_f","Ar_g"]
     before = len(unique_ar_df)
     unique_ar_df = unique_ar_df.dropna(subset=essential_cols)
     after  = len(unique_ar_df)
@@ -646,7 +537,6 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n[STEP3] Merge features into main df")
     ar_cols = _canon_ar_cols(df)
-    logs_in_folder = _list_log_basenames(log_folder)
 
     if not ar_cols and "Ar" in df.columns:
         df["Ar"] = df["Ar"].apply(_normalize_ar_value)
@@ -661,15 +551,11 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
         feature_ex_suffix = ("_Ar","_Ar_key","_log_path","_log_exists")
         features = [c for c in df.columns if re.match(r"^Ar\d+_", c) and not any(c.endswith(s) for s in feature_ex_suffix)]
 
-    # Final numeric coercion
+    # Guarded numeric coercion (only cast columns that exist)
     cols_to_cast = []
-    
-    base_cols = ["Ar_f","Ar_g"]
-    for bc in base_cols:
-        if bc in df.columns:
-            cols_to_cast.append(bc)
-    suffix_cols = [c for c in df.columns if c.endswith(("_Ar_f","_Ar_g"))]
-    cols_to_cast.extend(suffix_cols)
+    for base in ["Ar_f","Ar_g"]:
+        if base in df.columns: cols_to_cast.append(base)
+    cols_to_cast.extend([c for c in df.columns if c.endswith(("_Ar_f","_Ar_g"))])
     for col in cols_to_cast:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -683,28 +569,14 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
     if df_model.empty:
         print("⚠️ No data for regression after dropna."); return df, [], {}
 
-    groups = {}
-    for col in features:
-        g = col.split("_",1)[0]
-        groups.setdefault(g, []).append(col)
+    # Simple ungrouped search (robust and fast for small max_features)
+    results, best = search_best_models(df_model, features, target, max_features,
+                                       r2_threshold=0.7, q2_threshold=0.7,
+                                       save_csv=True, csv_path="regression_search_results.csv",
+                                       verbose=True)
 
-    for g, cols in groups.items():
-        print(f"   • {g}: {len(cols)} features")
+    if best:
+        plot_best_regression(target, df_model, best, savepath='Regression_Plot.png')
 
-    if not groups:
-        print("⚠️ No groups; use ungrouped search.")
-        results, best = search_best_models(df_model, features, target, max_features,
-                                           r2_threshold=0.7, q2_threshold=0.7, save_csv=True,
-                                           csv_path="regression_search_results.csv", verbose=True)
-        if best: plot_best_regression(target, df_model, best)
-        return df, results, best
-
-    bounds = {g:(1, min(3,len(cols))) for g,cols in groups.items()}
-    results, best = search_best_models_general(df_model, target, groups, max_features,
-                                               r2_threshold=0.7, q2_threshold=0.7,
-                                               balance="bounds", group_bounds=bounds,
-                                               save_csv=True, csv_path="regression_search_results.csv",
-                                               verbose=True, max_combinations_per_k=20000)
-    if best: plot_best_regression(target, df_model, best)
     print("\n✅ Analysis complete!")
     return df, results, best
