@@ -542,3 +542,57 @@ def fill_missing_ring_FG(df, resolver, store_mode='index', flip_on_missing=True,
 
     if verbose: print(f"[fill_missing_ring_FG] updated rows: {updated}")
     return df
+
+def run_full_pipeline(log_folder, xlsx_path, max_features=3, target='ln(kobs)'):
+    
+    import os
+    import pandas as pd
+    import numpy as np
+
+    df = pd.read_excel(xlsx_path)
+    print(f"[run_full_pipeline] Loaded {len(df)} samples from: {os.path.basename(xlsx_path)}")
+
+    try:
+        # resolver: 'A13' -> '<log_folder>/13.log'
+        def resolver(compound):
+            num = int(str(compound).lstrip("A"))
+            return os.path.join(log_folder, f"{num}.log")
+
+        if 'fill_missing_ring_FG' in globals():
+            _need_cols = [c for c in df.columns if c.endswith(("_Ar_f","_Ar_g"))]
+            _missing_before = int(df[_need_cols].isna().any(axis=1).sum()) if _need_cols else -1
+
+            df = fill_missing_ring_FG(df, resolver, store_mode='index', verbose=False)
+
+            _need_cols = [c for c in df.columns if c.endswith(("_Ar_f","_Ar_g"))]
+            _missing_after = int(df[_need_cols].isna().any(axis=1).sum()) if _need_cols else -1
+            print(f"[run_full_pipeline] AutoFill f/g missing: { _missing_before } → { _missing_after }")
+        else:
+            print("[run_full_pipeline] fill_missing_ring_FG not found; skip auto-fill.")
+    except Exception as e:
+        print(f"[run_full_pipeline] AutoFill error (skipped): {e}")
+
+    numeric_cols = [c for c in df.columns if (c not in ['Compound', target]) and (df[c].dtype != 'O')]
+    features = numeric_cols
+    print(f"[run_full_pipeline] Feature count: {len(features)}")
+
+    if 'search_best_models' not in globals():
+        raise RuntimeError("search_best_models() not found in this module.")
+
+    all_results, best_model = search_best_models(
+        data=df,
+        features=features,
+        target=target,
+        max_features=max_features,
+        r2_threshold=0.0,
+        save_csv=True,
+        csv_path="regression_search_results_full.csv",
+        verbose=True
+    )
+
+    if 'plot_best_regression' in globals():
+        plot_best_regression(target, df, best_model, savepath="Regression_Plot_full.png")
+    else:
+        print("[run_full_pipeline] plot_best_regression() not found; skip plotting.")
+
+    return df, all_results, best_model
