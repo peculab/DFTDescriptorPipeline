@@ -58,73 +58,70 @@ def _build_connectivity(elements, coords):
                 g[i].add(j); g[j].add(i)
     return g
 
-def _last_standard_orientation(text):
-    blocks = text.split("Standard orientation:")
-    if len(blocks)<2: return None, None
-    tail = blocks[-1]; lines = tail.splitlines()
-    start=None
-    for k,ln in enumerate(lines):
-        if "---------------------------------------------------------------------" in ln:
-            start=k+2; break
-    if start is None: return None, None
-    elems, xyz=[], []
-    Z2E={1:"H",6:"C",7:"N",8:"O",9:"F",16:"S",17:"Cl",35:"Br",53:"I"}
+
+# ==== BEGIN: geometry parsers (extended) ====
+def _parse_standard_or_input(text):
+    """Return (elems, xyz) from the last 'Standard orientation:' or 'Input orientation:' block."""
+    import re
+    blocks = re.split(r'(Standard|Input)\s+orientation:', text, flags=re.IGNORECASE)
+    if len(blocks) < 3:
+        return None, None
+    tail = blocks[-1]
+    lines = tail.splitlines()
+    start = None
+    for k, ln in enumerate(lines):
+        if re.match(r'^-+', ln.strip()):
+            start = k + 2
+            break
+    if start is None:
+        return None, None
+    elems, xyz = [], []
+    Z2E = {1:'H',6:'C',7:'N',8:'O',9:'F',16:'S',17:'Cl',35:'Br',53:'I'}
     for ln in lines[start:]:
-        if "---------------------------------------------------------------------" in ln: break
-        parts=ln.split()
-        if len(parts)<6: continue
-        atno=int(parts[1]); x,y,z = float(parts[3]), float(parts[4]), float(parts[5])
-        elems.append(Z2E.get(atno,"C")); xyz.append((x,y,z))
-    return elems, xyz
+        if re.match(r'^-+', ln.strip()):
+            break
+        parts = ln.strip().split()
+        if len(parts) >= 6 and parts[0].isdigit() and parts[1].isdigit():
+            try:
+                Z = int(parts[1]); x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+                elems.append(Z2E.get(Z,'X')); xyz.append((x,y,z))
+            except Exception:
+                continue
+    return (elems, xyz) if elems else (None, None)
 
-def _shortest_co(elements, coords, g):
-    cand=[]
-    for c in range(len(elements)):
-        if elements[c]!="C": continue
-        for o in g[c]:
-            if elements[o]!="O": continue
-            cand.append((_dist(coords[c],coords[o]), c, o))
-    cand.sort()
-    if not cand: return None, None
-    _,ci,oi = cand[0]
-    return ci, oi
+def _parse_checkpoint_structure(text):
+    """Return (elems, xyz) from 'Structure from the checkpoint file' coordinates block (best-effort)."""
+    import re
+    m = re.search(r"Structure\s+from\s+the\s+checkpoint\s+file[\s\S]{0,2000}?Coordinates[\s\S]+?\n", text, flags=re.IGNORECASE)
+    if not m:
+        return None, None
+    lines = text[m.end():].splitlines()
+    elems, xyz = [], []
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        if re.match(r'^-+|^={3,}', s) or re.match(r"^(Charge|Multiplicity|Standard|Input)\b", s):
+            break
+        parts = s.split()
+        try:
+            if len(parts) >= 5 and parts[0].isdigit():
+                sym = parts[1]; x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+            else:
+                sym = parts[0]; x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+            elems.append(sym); xyz.append((x,y,z))
+        except Exception:
+            continue
+    return (elems, xyz) if elems else (None, None)
 
-def _find_ring6(g, start, avoid=None):
-    avoid = avoid or set()
-    stack=[(start,[start])]
-    while stack:
-        node, path = stack.pop()
-        if len(path)>6: continue
-        for nb in g[node]:
-            if nb in avoid: continue
-            if len(path)>=2 and nb==path[-2]: continue
-            if nb==path[0] and 3<len(path)<=6:
-                if len(path)==6: return set(path)
-                else: continue
-            if nb not in path: stack.append((nb, path+[nb]))
-    return None
-
-def _fg_on_ring(g, ring, c2):
-    nbrs=[v for v in g[c2] if v in ring]
-    if len(nbrs)>=2: return nbrs[0], nbrs[1]
-    return None, None
-
-def derive_fg_from_geometry(log_text):
-    """Return (c1, c2, f, g) by geometry fallback; any not-found is None."""
-    elems, xyz = _last_standard_orientation(log_text)
-    if not elems: return None, None, None, None
-    g = _build_connectivity(elems, xyz)
-    c1, _ = _shortest_co(elems, xyz, g)
-    if c1 is None: return None, None, None, None
-    # pick a carbon neighbor of C1 that lies on a 6-ring → C2
-    c2 = None; ring=None
-    for nb in [v for v in g[c1] if elems[v]=="C"]:
-        ring6 = _find_ring6(g, nb, avoid={c1})
-        if ring6: c2=nb; ring=ring6; break
-    if c2 is None: return c1, None, None, None
-    f, g2 = _fg_on_ring(g, ring, c2)
-    return c1, c2, f, g2
+def _last_standard_orientation(text):
+    # Try Standard/Input orientation first; if absent, fall back to checkpoint structure
+    elems, xyz = _parse_standard_or_input(text)
+    if elems:
+        return elems, xyz
+    return _parse_checkpoint_structure(text)
 # ==== end F/G fallback utilities ====
+
 
 # ============ Helpers (normalization, column detection, logs) ============
 
@@ -197,17 +194,31 @@ def extract_polarizability(log_file):
     avg_polarizability = sum(values) / len(values)
     return avg_polarizability
 
+
 def extract_nbo_section(log_file):
     with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     match = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)(-+\n)", content, re.DOTALL)
-    if not match:
-        return None
-    return match.group(1)
+    if match:
+        return match.group(1)
+    # Fallback: return full content so downstream regex can still find BD(...) lines outside Summary
+    return content
+
 
 def find_oh_bonds(nbo_section):
+    # Primary: O-H
     oh_bonds = re.findall(r"BD \(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)", nbo_section)
-    return [(int(a), int(b)) for a, b in oh_bonds]
+    if not oh_bonds:
+        # Fallback: H-O (swap to O,H)
+        ho_bonds = re.findall(r"BD \(\s*1\s*\)\s*H\s*(\d+)\s*-\s*O\s*(\d+)", nbo_section)
+        oh_bonds = [(o, h) for h, o in ho_bonds]
+    # unique, cast to int
+    uniq, seen = [], set()
+    for a, b in oh_bonds:
+        a, b = int(a), int(b)
+        if (a, b) not in seen:
+            uniq.append((a, b)); seen.add((a, b))
+    return uniq
 
 def find_c1_c2(nbo_section, oh_bond_atoms):
     last_found = (None, None, None, None, None, None, None)
@@ -978,5 +989,3 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
-
-
