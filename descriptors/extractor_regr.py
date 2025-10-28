@@ -113,6 +113,239 @@ def _last_standard_orientation(text):
     return _parse_checkpoint_structure(text)
 # ==== END: geometry fallback parsers ====
 
+# ==== BEGIN: ultra-robust coordinate parsers ====
+def _ultra_parse_standard_or_input(text):
+    """
+    超寬鬆：擷取最後一個 'Standard orientation:' 或 'Input orientation:' 表格，
+    放寬對抬頭與橫線的要求；回傳 (elements: dict[idx->sym], coords: dict[idx->(x,y,z)])
+    """
+    import re
+    # 找所有可能的表頭
+    head_re = re.compile(r"(Standard|Input)\s+orientation\s*:\s*", re.IGNORECASE)
+    hits = [m.start() for m in head_re.finditer(text)]
+    if not hits:
+        return {}, {}
+    start = hits[-1]
+    tail = text[start:]
+    # 從抬頭後開始，找到 "Center ... X Y Z" 的那一行，再往下收集數據行
+    lines = tail.splitlines()
+    header_idx = None
+    for i, ln in enumerate(lines[:200]):  # 限制在抬頭後的前幾百行內找表頭
+        s = ln.strip()
+        if ("Center" in s and "Atomic" in s and "Coordinates" in s and "X" in s and "Y" in s and "Z" in s):
+            header_idx = i
+            break
+    if header_idx is None:
+        return {}, {}
+    # 從 header_idx 往下找數據行，直到遇到明顯結束（全空、下一個抬頭、或長分隔線）
+    import math
+    elems, coords = {}, {}
+    Z2E = {1:'H',6:'C',7:'N',8:'O',9:'F',15:'P',16:'S',17:'Cl',35:'Br',53:'I'}
+    idx_seen = set()
+    for ln in lines[header_idx+1:header_idx+1+1000]:
+        s = ln.strip()
+        if not s:
+            if len(coords) >= 1:
+                break
+            else:
+                continue
+        if (s.lower().startswith("standard") or s.lower().startswith("input")) and "orientation" in s.lower():
+            break
+        if set(s) <= set("-= "):  # 分隔線
+            if len(coords) >= 1:
+                break
+            else:
+                continue
+        parts = s.split()
+        # 常見格式: center_idx  atomicZ  atomicType  x  y  z
+        if len(parts) >= 6 and parts[0].isdigit() and parts[1].isdigit():
+            try:
+                center_idx = int(parts[0])
+                Z = int(parts[1])
+                x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+                if center_idx not in idx_seen:
+                    elems[center_idx] = Z2E.get(Z,'X')
+                    coords[center_idx] = (x,y,z)
+                    idx_seen.add(center_idx)
+            except:
+                pass
+        # 退而求其次：有些表沒有 center_idx/atomicZ（很少見），這裡不處理
+    return elems, coords
+
+def _ultra_parse_checkpoint(text):
+    import re
+    m = re.search(r"Structure\s+from\s+the\s+checkpoint\s+file[\s\S]{0,2000}?Coordinates", text, re.IGNORECASE)
+    if not m:
+        return {}, {}
+    # 從 m.end() 往下抓到下一個抬頭/分隔
+    lines = text[m.end():].splitlines()
+    elems, coords = {}, {}
+    idx = 1
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            if len(coords) >= 1:
+                break
+            else:
+                continue
+        if set(s) <= set("-= "):  # 分隔線
+            if len(coords) >= 1:
+                break
+            else:
+                continue
+        if any(k in s for k in ["Charge", "Multiplicity", "Standard", "Input"]):
+            break
+        parts = s.split()
+        try:
+            if len(parts) >= 5 and parts[0].isdigit():
+                sym = parts[1]; x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+            else:
+                sym = parts[0]; x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+            elems[idx] = sym
+            coords[idx] = (x,y,z)
+            idx += 1
+        except:
+            pass
+    return elems, coords
+
+def _ultra_parse_any_center_table(text):
+    """
+    萬一前兩種都抓不到，這裡嘗試找任意包含 Center/Atomic/X/Y/Z 的表格（最後一個），
+    放寬到只要偵測到數值列就收。
+    """
+    import re
+    # 找出所有包含關鍵字的表頭位置
+    pat = re.compile(r"(Center.*Atomic.*Coordinates.*X.*Y.*Z)", re.IGNORECASE)
+    spans = [m.span() for m in pat.finditer(text)]
+    if not spans:
+        return {}, {}
+    start = spans[-1][1]
+    lines = text[start:].splitlines()
+    elems, coords = {}, {}
+    Z2E = {1:'H',6:'C',7:'N',8:'O',9:'F',15:'P',16:'S',17:'Cl',35:'Br',53:'I'}
+    idx_seen = set()
+    for ln in lines[:1200]:
+        s = ln.strip()
+        if not s:
+            if len(coords) >= 1:
+                break
+            else:
+                continue
+        if set(s) <= set("-= "):
+            if len(coords) >= 1:
+                break
+            else:
+                continue
+        parts = s.split()
+        # 儘可能容忍不同欄位數；只要末三個是 x y z 就收，前兩個盡可能當 center_idx 與 Z
+        if len(parts) >= 4:
+            try:
+                x,y,z = float(parts[-3]), float(parts[-2]), float(parts[-1])
+            except:
+                continue
+            center_idx = None; Z = None; sym = None
+            # 嘗試讀 center_idx 與 Z
+            if len(parts) >= 6 and parts[0].isdigit() and parts[1].isdigit():
+                center_idx = int(parts[0]); Z = int(parts[1]); sym = Z2E.get(Z,'X')
+            else:
+                # 猜測 symbol 在最前面
+                if parts[0].isalpha():
+                    sym = parts[0]; center_idx = (max(idx_seen) + 1) if idx_seen else 1
+                else:
+                    center_idx = (max(idx_seen) + 1) if idx_seen else 1; sym = 'X'
+            elems[center_idx] = sym
+            coords[center_idx] = (x,y,z)
+            idx_seen.add(center_idx)
+    return elems, coords
+
+def _get_coords_robust(text):
+    """
+    嘗試三種解析器，回傳 (elems, coords)；若都失敗，回傳兩個空 dict。
+    """
+    e,c = _ultra_parse_standard_or_input(text)
+    if e and c:
+        return e,c
+    e,c = _ultra_parse_checkpoint(text)
+    if e and c:
+        return e,c
+    e,c = _ultra_parse_any_center_table(text)
+    return e,c
+# ==== END: ultra-robust coordinate parsers ====
+
+def _extract_bd_bonds_anywhere(text):
+    import re
+    pat = re.compile(r"BD\s*\(\s*(\d+)\s*\)\s*([A-Za-z]+)\s*(\d+)\s*-\s*([A-Za-z]+)\s*(\d+)", re.IGNORECASE)
+    bonds = []
+    for m in pat.finditer(text):
+        order = int(m.group(1))
+        xsym, xi = m.group(2).upper(), int(m.group(3))
+        ysym, yj = m.group(4).upper(), int(m.group(5))
+        bonds.append((order, xsym, xi, ysym, yj))
+    return bonds
+
+def _bond_graph_from_bd(bonds):
+    g={}
+    for order,xs,xi,ys,yj in bonds:
+        g.setdefault(xi,[]).append((yj,order,ys))
+        g.setdefault(yj,[]).append((xi,order,xs))
+    return g
+
+def derive_fg_from_geometry_robust(log_text, prefer_single_bonds=True):
+    """
+    先用 BD 鍵結在 NBO 索引空間找 C1/C2/F/G（不依賴座標）；
+    若能再取得座標（索引一致），即可用來算二面角。
+    回傳: (C1, C2, F, G, elems, coords)
+    """
+    # 1) O–H
+    oh = find_oh_bonds(log_text)  # 我們前面已改成回傳全文；或此處直接用全文
+    if not oh:
+        return None, None, None, None, {}, {}
+    O,H = oh[0]
+
+    # 2) 用 BD 鍵結建圖（NBO 索引空間）
+    bonds = _extract_bd_bonds_anywhere(log_text)
+    g = _bond_graph_from_bd(bonds)
+
+    # C1：O 的鄰碳
+    neigh_o = g.get(O, [])
+    c1_cands = [(n,ordr,sym) for (n,ordr,sym) in neigh_o if sym=='C']
+    if not c1_cands:
+        return None, None, None, None, {}, {}
+    if prefer_single_bonds:
+        singles = [n for (n,ordr,_) in c1_cands if ordr==1]
+        C1 = singles[0] if singles else c1_cands[0][0]
+    else:
+        C1 = c1_cands[0][0]
+
+    # C2：C1 的鄰碳（排除 O）
+    neigh_c1 = g.get(C1, [])
+    c2_cands = [(n,ordr,sym) for (n,ordr,sym) in neigh_c1 if sym=='C' and n != O]
+    if not c2_cands:
+        c2_cands = [(n,ordr,sym) for (n,ordr,sym) in neigh_c1 if n != O]
+    if not c2_cands:
+        return C1, None, None, None, {}, {}
+
+    if prefer_single_bonds:
+        singles = [n for (n,ordr,_) in c2_cands if ordr==1]
+        pool = singles if singles else [n for (n,_,_) in c2_cands]
+    else:
+        pool = [n for (n,_,_) in c2_cands]
+
+    C2 = sorted(pool, key=lambda n: len(g.get(n, [])), reverse=True)[0]
+
+    # F/G：C2 的兩個鄰居（排除 C1）
+    neigh_c2 = g.get(C2, [])
+    fg = [(n,ordr,sym) for (n,ordr,sym) in neigh_c2 if n != C1]
+    single_carbons = [n for (n,ordr,sym) in fg if ordr==1 and sym=='C']
+    others = [n for (n,ordr,sym) in fg if n not in single_carbons]
+    ordered = single_carbons + [n for (n,_,_) in others]
+    F = ordered[0] if len(ordered)>=1 else None
+    G = ordered[1] if len(ordered)>=2 else None
+
+    # 3) 取座標（若成功，後面你算二面角就能對上）
+    elems, coords = _get_coords_robust(log_text)
+
+    return C1, C2, F, G, elems, coords
 
 # ==== BEGIN: connectivity (若你專案內已有 _build_connectivity / COV_RAD，可用現有的) ====
 # 簡化用共價半徑（Å）
@@ -996,7 +1229,7 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
                 Ar_c, Ar_e, Ar_a, Ar_b, Ar_d, Ar_f, Ar_g = c1, c2, a, b, d, f, g
 
                 if (Ar_f is None) or (Ar_g is None):
-                    c1_geo, c2_geo, f_geo, g_geo = derive_fg_from_geometry(log_text)
+                    c1_geo, c2_geo, f_geo, g_geo = derive_fg_from_geometry_robust(log_text)
                     if (Ar_c is None) and (c1_geo is not None): Ar_c = c1_geo
                     if (Ar_e is None) and (c2_geo is not None): Ar_e = c2_geo
                     if (Ar_f is None) and (f_geo  is not None): Ar_f = f_geo
@@ -1020,7 +1253,7 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
                     except Exception:
                         pass
             else:
-                c1_geo, c2_geo, f_geo, g_geo = derive_fg_from_geometry(log_text)
+                c1_geo, c2_geo, f_geo, g_geo = derive_fg_from_geometry_robust(log_text)
                 Ar_c, Ar_e, Ar_f, Ar_g = c1_geo, c2_geo, f_geo, g_geo
 
             unique_ar_df.at[index, "Ar_NBO_C2"] = Ar_NBO_C2
@@ -1167,4 +1400,5 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
 
