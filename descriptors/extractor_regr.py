@@ -464,3 +464,81 @@ def plot_best_regression(target, df, best_model, savepath='Regression_Plot.png')
     fig.text(0.55, 0.25, f'$Q^2= {best_model["q2_loocv"]:.2f}$ (LOO)', fontsize=16)
     fig.text(0.55, 0.20, f'{len(y_actual)} data points', fontsize=16, style='italic')
     fig.tight_layout(); plt.savefig(savepath, bbox_inches='tight'); plt.show()
+
+# =========================
+# F/G Automatic completion and flip repair
+# =========================
+def fill_missing_ring_FG(df, resolver, store_mode='index', flip_on_missing=True, verbose=True):
+    import numpy as np, pandas as pd
+
+    need = [c for c in df.columns if c.endswith(("_Ar_f","_Ar_g"))]
+    if not all(c in df.columns for c in need):
+        for c in need:
+            if c not in df.columns: df[c] = np.nan
+
+    def _safe_int(x):
+        try: return int(x)
+        except: return None
+
+    def _ang(coords, H,O,C1,F):
+        import math
+        if coords and all(i in coords for i in [H,O,C1,F]) and F:
+            def v(a,b): return (b[0]-a[0], b[1]-a[1], b[2]-a[2])
+            def dot(u,v): return u[0]*v[0]+u[1]*v[1]+u[2]*v[2]
+            def cross(u,v): return (u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0])
+            b1=v(p2:=coords[O],p1:=coords[H]); b2=v(p2,coords[C1]); b3=v(coords[F],coords[C1])
+            bn=(dot(b2,b2))**0.5
+            if bn==0: return np.nan
+            b2u=(b2[0]/bn,b2[1]/bn,b2[2]/bn)
+            v1=cross(b1,b2u); v2=cross(b3,b2u)
+            x=dot(v1,v2); y=dot(cross(v1,b2u),v2)
+            return math.degrees(math.atan2(y,x))
+        return np.nan
+
+    updated = 0
+    for i,row in df.iterrows():
+        comp = str(row['Compound'])
+        path = resolver(comp)
+        try:
+            text = open(path,'r',encoding='utf-8',errors='ignore').read()
+        except Exception:
+            if verbose: print(f"[skip] {comp}: log not found"); continue
+
+        try:
+            oh = find_oh_bonds(text)
+            if not oh: continue
+            O,H = oh[0]
+            C1,C2,F,G,elems,coords = derive_fg_from_geometry_robust(text)
+            if not elems or not coords: continue
+
+            # 判斷缺值 → 補齊
+            if pd.isna(row['Ar1_Ar_f']) or pd.isna(row['Ar1_Ar_g']):
+                df.at[i,'Ar1_Ar_f'] = float(F) if F else np.nan
+                df.at[i,'Ar1_Ar_g'] = float(G) if G else np.nan
+
+            # 如果 Ar2 缺值 → 先用 azo 另一側補
+            both = derive_fg_for_both_rings_azo(text)
+            right, left = both.get('right',{}), both.get('left',{})
+            if pd.isna(row['Ar2_Ar_f']) and right.get('F'):
+                df.at[i,'Ar2_Ar_f'] = float(right['F'])
+            if pd.isna(row['Ar2_Ar_g']) and right.get('G'):
+                df.at[i,'Ar2_Ar_g'] = float(right['G'])
+
+            # 若還缺 → 翻面修復
+            if flip_on_missing and (pd.isna(row['Ar1_Ar_f']) or pd.isna(row['Ar2_Ar_f'])):
+                if left.get('F') and pd.isna(row['Ar1_Ar_f']):
+                    df.at[i,'Ar1_Ar_f'] = float(left['F'])
+                if left.get('G') and pd.isna(row['Ar1_Ar_g']):
+                    df.at[i,'Ar1_Ar_g'] = float(left['G'])
+                if right.get('F') and pd.isna(row['Ar2_Ar_f']):
+                    df.at[i,'Ar2_Ar_f'] = float(right['F'])
+                if right.get('G') and pd.isna(row['Ar2_Ar_g']):
+                    df.at[i,'Ar2_Ar_g'] = float(right['G'])
+
+            updated += 1
+        except Exception as e:
+            if verbose: print(f"[fail] {comp}: {e}")
+            continue
+
+    if verbose: print(f"[fill_missing_ring_FG] updated rows: {updated}")
+    return df
