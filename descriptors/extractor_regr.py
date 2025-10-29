@@ -211,48 +211,93 @@ def find_oh_bonds(nbo_section):
 
 def find_c1_c2(nbo_section, oh_bond_atoms):
     last_found = (None, None, None, None, None, None, None)
+
     for a, b in oh_bond_atoms:
-        c_candidates = re.findall(rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*O\s*{a}|O\s*{a}\s*-\s*C\s*(\d+))", nbo_section)
-        for c in c_candidates:
-            c = int(c)
-            o_d_candidates = re.findall(rf"BD \(\s*[12]\s*\)\s*(?:C\s*{c}\s*-\s*O\s*(\d+)|O\s*(\d+)\s*-\s*C\s*{c})", nbo_section)
-            for d in o_d_candidates:
-                d = int(d)
-                e_candidates = re.findall(rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*C\s*{c}|C\s*{c}\s*-\s*C\s*(\d+))", nbo_section)
-                for e in e_candidates:
-                    e = int(e)
-                    bond_types = re.findall(rf"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)", nbo_section)
+        # C1 候選：C–O(a) 單鍵，雙向
+        c_candidates = re.findall(
+            rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*O\s*{a}|O\s*{a}\s*-\s*C\s*(\d+))",
+            nbo_section
+        )
+        c_ids = [int(x) for tup in c_candidates for x in tup if x]
+
+        for c in c_ids:
+            # D 候選：C1–O（單或雙），雙向；※ 排除 a（OH 的氧）
+            o_d_candidates = re.findall(
+                rf"BD \(\s*[12]\s*\)\s*(?:C\s*{c}\s*-\s*O\s*(\d+)|O\s*(\d+)\s*-\s*C\s*{c})",
+                nbo_section
+            )
+            d_ids = [int(x) for tup in o_d_candidates for x in tup if x]
+            d_ids = [d for d in d_ids if d != a]   # ← 關鍵：排除 OH 的氧
+
+            for d in d_ids:
+                # C2 候選：C–C(c) 單鍵，雙向
+                e_candidates = re.findall(
+                    rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*C\s*{c}|C\s*{c}\s*-\s*C\s*(\d+))",
+                    nbo_section
+                )
+                e_ids = [int(x) for tup in e_candidates for x in tup if x]
+
+                for e in e_ids:
+                    # 列出與 e 有關的所有 BD(1/2) 配對
+                    bond_types = re.findall(
+                        rf"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)",
+                        nbo_section
+                    )
                     bond_pairs = {}
                     e_neighbors = []
+
                     for bond_type, atom1, num1, atom2, num2 in bond_types:
                         num1, num2 = int(num1), int(num2)
                         if num1 == e or num2 == e:
                             other = num2 if num1 == e else num1
                             e_neighbors.append((bond_type, other))
-                            bond_pair = frozenset([num1, num2])
-                            if bond_pair not in bond_pairs:
-                                bond_pairs[bond_pair] = set()
-                            bond_pairs[bond_pair].add(bond_type)
+                            bp = frozenset((num1, num2))
+                            bond_pairs.setdefault(bp, set()).add(bond_type)
+
                     single_count = sum("1" in types for types in bond_pairs.values())
                     double_count = sum("2" in types for types in bond_pairs.values())
                     last_found = (c, e, a, b, d, None, None)
+
                     if single_count >= 2 and double_count >= 1:
-                        f, g = None, None
-                        single_neighbors = [n for t, n in e_neighbors if t == "1"]
-                        double_neighbors = [n for t, n in e_neighbors if t == "2"]
-                        for neighbor in single_neighbors:
-                            if f is None:
-                                f = neighbor
-                            elif g is None and neighbor != f:
-                                g = neighbor
-                        for neighbor in double_neighbors:
-                            if g is None or neighbor == f:
-                                g = neighbor
+                        # ====== 改良版 F/G 挑選 ======
+                        # 1) 先把側鏈碳 c 排除，再去重
+                        singles = sorted(set(n for t, n in e_neighbors if t == "1" and n != c))
+                        doubles = sorted(set(n for t, n in e_neighbors if t == "2" and n != c))
+
+                        f = g = None
+                        # 優先「單 + 雙」各一個（較能對應芳環一單一雙的局域化）
+                        if singles and doubles:
+                            f = singles[0]
+                            g = doubles[0] if doubles[0] != f else (doubles[1] if len(doubles) > 1 else None)
+                        # 其次兩個單鍵
+                        if g is None and len(singles) >= 2:
+                            f, g = singles[0], singles[1]
+                        # 再者兩個雙鍵
+                        if g is None and len(doubles) >= 2:
+                            f, g = doubles[0], doubles[1]
+                        # 最保底：從所有鄰居中湊兩個不同的
+                        if g is None:
+                            pool = [n for _, n in e_neighbors if n != c]
+                            # 去重且維持順序
+                            seen, ordered = set(), []
+                            for n in pool:
+                                if n not in seen:
+                                    seen.add(n); ordered.append(n)
+                            if ordered:
+                                f = ordered[0]
+                                g = ordered[1] if len(ordered) > 1 else None
+
+                        # 嚴防 f==g（極少數格式怪異時）
+                        if g == f:
+                            g = next((n for n in singles + doubles if n not in (None, f, c)), None)
+
                         print(f"Found C1: {c}, C2: {e}, A: {a}, B: {b}, D: {d}, F: {f}, G: {g}")
                         return c, e, a, b, d, f, g
+
     if last_found[0] is not None:
         print(f"[WARN] No C1-C2 pairs with the required bonding pattern found, returning last found values: {last_found}")
         return last_found
+
     return None, None, None, None, None, None, None
 
 def extract_nbo_values(log_file, c1, c2, a):
@@ -978,5 +1023,6 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
 
 
