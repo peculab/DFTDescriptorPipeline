@@ -211,41 +211,32 @@ def find_oh_bonds(nbo_section):
 
 def find_c1_c2(nbo_section, oh_bond_atoms):
     last_found = (None, None, None, None, None, None, None)
-
     for a, b in oh_bond_atoms:
-        # C1 候選：C–O(a) 單鍵，雙向
         c_candidates = re.findall(
             rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*O\s*{a}|O\s*{a}\s*-\s*C\s*(\d+))",
             nbo_section
         )
         c_ids = [int(x) for tup in c_candidates for x in tup if x]
-
         for c in c_ids:
-            # D 候選：C1–O（單或雙），雙向；※ 排除 a（OH 的氧）
             o_d_candidates = re.findall(
                 rf"BD \(\s*[12]\s*\)\s*(?:C\s*{c}\s*-\s*O\s*(\d+)|O\s*(\d+)\s*-\s*C\s*{c})",
                 nbo_section
             )
             d_ids = [int(x) for tup in o_d_candidates for x in tup if x]
-            d_ids = [d for d in d_ids if d != a]   # ← 關鍵：排除 OH 的氧
-
+            d_ids = [d for d in d_ids if d != a]          # ← 排除 OH 的氧
             for d in d_ids:
-                # C2 候選：C–C(c) 單鍵，雙向
                 e_candidates = re.findall(
                     rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*C\s*{c}|C\s*{c}\s*-\s*C\s*(\d+))",
                     nbo_section
                 )
                 e_ids = [int(x) for tup in e_candidates for x in tup if x]
-
                 for e in e_ids:
-                    # 列出與 e 有關的所有 BD(1/2) 配對
                     bond_types = re.findall(
                         rf"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)",
                         nbo_section
                     )
                     bond_pairs = {}
                     e_neighbors = []
-
                     for bond_type, atom1, num1, atom2, num2 in bond_types:
                         num1, num2 = int(num1), int(num2)
                         if num1 == e or num2 == e:
@@ -259,35 +250,38 @@ def find_c1_c2(nbo_section, oh_bond_atoms):
                     last_found = (c, e, a, b, d, None, None)
 
                     if single_count >= 2 and double_count >= 1:
-                        # ====== 改良版 F/G 挑選 ======
-                        # 1) 先把側鏈碳 c 排除，再去重
-                        singles = sorted(set(n for t, n in e_neighbors if t == "1" and n != c))
-                        doubles = sorted(set(n for t, n in e_neighbors if t == "2" and n != c))
+                        # —— 只改這段挑 F/G 的邏輯 ——
+                        singles = []
+                        doubles = []
+                        for t, n in e_neighbors:
+                            if n == c:    # ← 排除側鏈碳 c
+                                continue
+                            if t == "1" and n not in singles:
+                                singles.append(n)
+                            elif t == "2" and n not in doubles:
+                                doubles.append(n)
 
                         f = g = None
-                        # 優先「單 + 雙」各一個（較能對應芳環一單一雙的局域化）
+                        # 優先「單+雙」
                         if singles and doubles:
                             f = singles[0]
                             g = doubles[0] if doubles[0] != f else (doubles[1] if len(doubles) > 1 else None)
-                        # 其次兩個單鍵
+                        # 其次「單+單」
                         if g is None and len(singles) >= 2:
                             f, g = singles[0], singles[1]
-                        # 再者兩個雙鍵
+                        # 再者「雙+雙」
                         if g is None and len(doubles) >= 2:
                             f, g = doubles[0], doubles[1]
-                        # 最保底：從所有鄰居中湊兩個不同的
+                        # 最保底：從所有鄰居（已排除 c）湊兩個不同
                         if g is None:
-                            pool = [n for _, n in e_neighbors if n != c]
-                            # 去重且維持順序
-                            seen, ordered = set(), []
-                            for n in pool:
-                                if n not in seen:
-                                    seen.add(n); ordered.append(n)
-                            if ordered:
-                                f = ordered[0]
-                                g = ordered[1] if len(ordered) > 1 else None
+                            pool = []
+                            for _, n in e_neighbors:
+                                if n != c and n not in pool:
+                                    pool.append(n)
+                            if pool:
+                                f = pool[0]
+                                g = pool[1] if len(pool) > 1 else None
 
-                        # 嚴防 f==g（極少數格式怪異時）
                         if g == f:
                             g = next((n for n in singles + doubles if n not in (None, f, c)), None)
 
@@ -297,7 +291,6 @@ def find_c1_c2(nbo_section, oh_bond_atoms):
     if last_found[0] is not None:
         print(f"[WARN] No C1-C2 pairs with the required bonding pattern found, returning last found values: {last_found}")
         return last_found
-
     return None, None, None, None, None, None, None
 
 def extract_nbo_values(log_file, c1, c2, a):
@@ -1023,6 +1016,7 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
 
 
 
