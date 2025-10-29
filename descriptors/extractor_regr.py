@@ -41,7 +41,7 @@ except Exception:
 # ==== F/G fallback from geometry (paste near the top) ====
 import math
 
-COV_RAD = {"H":0.31,"C":0.76,"N":0.71,"O":0.66,"F":0.57,"Si":1.11,"S":1.05,"Cl":1.02,"Br":1.20,"I":1.39}
+COV_RAD = {"H":0.31,"C":0.76,"N":0.71,"O":0.66,"F":0.57,"S":1.05,"Cl":1.02,"Br":1.20,"I":1.39}
 
 def _dist(p, q):
     return math.sqrt((p[0]-q[0])**2+(p[1]-q[1])**2+(p[2]-q[2])**2)
@@ -58,38 +58,24 @@ def _build_connectivity(elements, coords):
                 g[i].add(j); g[j].add(i)
     return g
 
-
-def _last_orientation(text):
+def _last_standard_orientation(text):
     blocks = text.split("Standard orientation:")
-    if len(blocks) < 2:
-        blocks = text.split("Input orientation:")
-        if len(blocks) < 2:
-            return None, None
-    tail = blocks[-1]
-    lines = tail.splitlines()
-    start = None
-    dash = "---------------------------------------------------------------------"
-    for k, ln in enumerate(lines):
-        if dash in ln:
-            start = k + 2
-            break
-    if start is None:
-        return None, None
-    elems, xyz = [], []
-    Z2E = {1:"H",6:"C",7:"N",8:"O",9:"F",14:"Si",16:"S",17:"Cl",35:"Br",53:"I"}
+    if len(blocks)<2: return None, None
+    tail = blocks[-1]; lines = tail.splitlines()
+    start=None
+    for k,ln in enumerate(lines):
+        if "---------------------------------------------------------------------" in ln:
+            start=k+2; break
+    if start is None: return None, None
+    elems, xyz=[], []
+    Z2E={1:"H",6:"C",7:"N",8:"O",9:"F",16:"S",17:"Cl",35:"Br",53:"I"}
     for ln in lines[start:]:
-        if dash in ln:
-            break
-        parts = ln.split()
-        if len(parts) < 6 or not parts[1].isdigit():
-            continue
-        atno = int(parts[1])
-        x, y, z = float(parts[3]), float(parts[4]), float(parts[5])
-        elems.append(Z2E.get(atno, "C"))
-        xyz.append((x, y, z))
+        if "---------------------------------------------------------------------" in ln: break
+        parts=ln.split()
+        if len(parts)<6: continue
+        atno=int(parts[1]); x,y,z = float(parts[3]), float(parts[4]), float(parts[5])
+        elems.append(Z2E.get(atno,"C")); xyz.append((x,y,z))
     return elems, xyz
-
-
 
 def _shortest_co(elements, coords, g):
     cand=[]
@@ -125,7 +111,7 @@ def _fg_on_ring(g, ring, c2):
 
 def derive_fg_from_geometry(log_text):
     """Return (c1, c2, f, g) by geometry fallback; any not-found is None."""
-    elems, xyz = _last_orientation(log_text)
+    elems, xyz = _last_standard_orientation(log_text)
     if not elems: return None, None, None, None
     g = _build_connectivity(elems, xyz)
     c1, _ = _shortest_co(elems, xyz, g)
@@ -228,36 +214,7 @@ def find_oh_bonds(nbo_section):
         elif c and d: out.append((int(d), int(c))) # H c - O d  → 轉成 (O d, H c)
     return out
 
-
-def find_phenoxy_oxygen(nbo_section):
-    """Return [(O, H_or_Si)]; prefer O–H, else O–Si; empty if none."""
-    # O–H (both directions)
-    oh = re.findall(r"BD \(\s*1\s*\)\s*(?:O\s*(\d+)\s*-\s*H\s*(\d+)|H\s*(\d+)\s*-\s*O\s*(\d+))", nbo_section)
-    pairs = []
-    for a,b,c,d in oh:
-        if a and b:
-            pairs.append((int(a), int(b)))
-        elif c and d:
-            pairs.append((int(d), int(c)))
-    if pairs:
-        return pairs
-    # O–Si (both directions)
-    osi = re.findall(r"BD \(\s*1\s*\)\s*(?:O\s*(\d+)\s*-\s*Si\s*(\d+)|Si\s*(\d+)\s*-\s*O\s*(\d+))", nbo_section)
-    out = []
-    for a,b,c,d in osi:
-        if a and b:
-            out.append((int(a), int(b)))
-        elif c and d:
-            out.append((int(d), int(c)))
-    return out
-
 def find_c1_c2(nbo_section, oh_bond_atoms):
-    """
-    Still anchor at O (from O–H or O–Si). Find c (acyl carbon), d (carbonyl O),
-    e (ipso carbon), then choose F/G among e's carbon neighbors (excluding c).
-    Trigger when there are at least two carbon neighbors; do not require a mix
-    of single/double explicitly.
-    """
     last_found = (None, None, None, None, None, None, None)
     for a, b in oh_bond_atoms:
         c_candidates = re.findall(
@@ -271,7 +228,7 @@ def find_c1_c2(nbo_section, oh_bond_atoms):
                 nbo_section
             )
             d_ids = [int(x) for tup in o_d_candidates for x in tup if x]
-            d_ids = [d for d in d_ids if d != a]
+            d_ids = [d for d in d_ids if d != a]          # ← 排除 OH 的氧
             for d in d_ids:
                 e_candidates = re.findall(
                     rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*C\s*{c}|C\s*{c}\s*-\s*C\s*(\d+))",
@@ -280,46 +237,66 @@ def find_c1_c2(nbo_section, oh_bond_atoms):
                 e_ids = [int(x) for tup in e_candidates for x in tup if x]
                 for e in e_ids:
                     bond_types = re.findall(
-                        r"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)",
+                        rf"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)",
                         nbo_section
                     )
-                    single_C, double_C = [], []
-                    for btype, a1, n1, a2, n2 in bond_types:
-                        n1, n2 = int(n1), int(n2)
-                        if n1 == e or n2 == e:
-                            other = n2 if n1 == e else n1
-                            other_sym = a2 if n1 == e else a1
-                            if other == c or other_sym != "C":
-                                continue
-                            if btype == "1" and other not in single_C:
-                                single_C.append(other)
-                            elif btype == "2" and other not in double_C:
-                                double_C.append(other)
-                    carbon_neighbors = list(dict.fromkeys(single_C + double_C))
+                    bond_pairs = {}
+                    e_neighbors = []
+                    for bond_type, atom1, num1, atom2, num2 in bond_types:
+                        num1, num2 = int(num1), int(num2)
+                        if num1 == e or num2 == e:
+                            other = num2 if num1 == e else num1
+                            e_neighbors.append((bond_type, other))
+                            bp = frozenset((num1, num2))
+                            bond_pairs.setdefault(bp, set()).add(bond_type)
+
+                    single_count = sum("1" in types for types in bond_pairs.values())
+                    double_count = sum("2" in types for types in bond_pairs.values())
                     last_found = (c, e, a, b, d, None, None)
-                    if len(carbon_neighbors) < 2:
-                        continue
-                    f = g = None
-                    if single_C and double_C:
-                        f = single_C[0]
-                        g = double_C[0] if double_C[0] != f else (double_C[1] if len(double_C) > 1 else None)
-                    if g is None and len(single_C) >= 2:
-                        f, g = single_C[0], single_C[1]
-                    if g is None and len(double_C) >= 2:
-                        f, g = double_C[0], double_C[1]
-                    if g is None:
-                        f = carbon_neighbors[0]
-                        g = carbon_neighbors[1] if len(carbon_neighbors) > 1 else None
-                    if g == f:
-                        g = next((n for n in carbon_neighbors if n not in (None, f, c)), None)
-                    print(f"Found C1: {c}, C2: {e}, A: {a}, B: {b}, D: {d}, F: {f}, G: {g}")
-                    return c, e, a, b, d, f, g
+
+                    if single_count >= 2 and double_count >= 1:
+                        # —— 只改這段挑 F/G 的邏輯 ——
+                        singles = []
+                        doubles = []
+                        for t, n in e_neighbors:
+                            if n == c:    # ← 排除側鏈碳 c
+                                continue
+                            if t == "1" and n not in singles:
+                                singles.append(n)
+                            elif t == "2" and n not in doubles:
+                                doubles.append(n)
+
+                        f = g = None
+                        # 優先「單+雙」
+                        if singles and doubles:
+                            f = singles[0]
+                            g = doubles[0] if doubles[0] != f else (doubles[1] if len(doubles) > 1 else None)
+                        # 其次「單+單」
+                        if g is None and len(singles) >= 2:
+                            f, g = singles[0], singles[1]
+                        # 再者「雙+雙」
+                        if g is None and len(doubles) >= 2:
+                            f, g = doubles[0], doubles[1]
+                        # 最保底：從所有鄰居（已排除 c）湊兩個不同
+                        if g is None:
+                            pool = []
+                            for _, n in e_neighbors:
+                                if n != c and n not in pool:
+                                    pool.append(n)
+                            if pool:
+                                f = pool[0]
+                                g = pool[1] if len(pool) > 1 else None
+
+                        if g == f:
+                            g = next((n for n in singles + doubles if n not in (None, f, c)), None)
+
+                        print(f"Found C1: {c}, C2: {e}, A: {a}, B: {b}, D: {d}, F: {f}, G: {g}")
+                        return c, e, a, b, d, f, g
+
     if last_found[0] is not None:
-        print(f"[WARN] Pattern not fully satisfied; returning last found: {last_found}")
+        print(f"[WARN] No C1-C2 pairs with the required bonding pattern found, returning last found values: {last_found}")
         return last_found
     return None, None, None, None, None, None, None
-
-
 
 def extract_nbo_values(log_file, c1, c2, a):
     nbo_section = extract_nbo_section(log_file)
@@ -862,7 +839,7 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
             Ar_b = Ar_d = Ar_f = Ar_g = None
 
             if nbo_content:
-                oh_atoms = find_phenoxy_oxygen(nbo_content)
+                oh_atoms = find_oh_bonds(nbo_content)
                 c1, c2, a, b, d, f, g = find_c1_c2(nbo_content, oh_atoms)
                 Ar_c, Ar_e, Ar_a, Ar_b, Ar_d, Ar_f, Ar_g = c1, c2, a, b, d, f, g
 
