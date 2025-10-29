@@ -200,14 +200,19 @@ def extract_polarizability(log_file):
 def extract_nbo_section(log_file):
     with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
-    match = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)(-+\n)", content, re.DOTALL)
-    if not match:
+    # 抓到所有 Summary，回傳最後一段（最完整）
+    blocks = re.findall(r"Natural Bond Orbitals \(Summary\):(.*?)(?:-{5,}\n)", content, re.DOTALL)
+    if not blocks:
         return None
-    return match.group(1)
+    return blocks[-1]
 
 def find_oh_bonds(nbo_section):
-    oh_bonds = re.findall(r"BD \(\s*1\s*\)\s*O\s*(\d+)\s*-\s*H\s*(\d+)", nbo_section)
-    return [(int(a), int(b)) for a, b in oh_bonds]
+    pairs = re.findall(r"BD \(\s*1\s*\)\s*(?:O\s*(\d+)\s*-\s*H\s*(\d+)|H\s*(\d+)\s*-\s*O\s*(\d+))", nbo_section)
+    out = []
+    for a,b,c,d in pairs:
+        if a and b: out.append((int(a), int(b)))   # O a - H b
+        elif c and d: out.append((int(d), int(c))) # H c - O d  → 轉成 (O d, H c)
+    return out
 
 def find_c1_c2(nbo_section, oh_bond_atoms):
     last_found = (None, None, None, None, None, None, None)
@@ -294,28 +299,22 @@ def find_c1_c2(nbo_section, oh_bond_atoms):
     return None, None, None, None, None, None, None
 
 def extract_nbo_values(log_file, c1, c2, a):
-    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
-        content = f.read()
-    match = re.search(r"Natural Bond Orbitals \(Summary\):(.*?)-{30,}", content, re.DOTALL)
-    if not match:
+    nbo_section = extract_nbo_section(log_file)
+    if not nbo_section:
         return None
-    nbo_section = match.group(1)
-    bond_patterns = {
-        "C1-O": rf"BD \(   1\) C\s+{c1}\s+-\s+O\s+{a}\s+([\d\.]+)\s+([-\d\.]+)",
-        "C1-C2": rf"BD \(   1\) C\s+{c2}\s+-\s+C\s+{c1}\s+([\d\.]+)\s+([-\d\.]+)"
-    }
-    occupancy_C1_O = occupancy_C1_C2 = None
-    energy_C1_O = energy_C1_C2 = None
-    for key, pattern in bond_patterns.items():
-        match = re.search(pattern, nbo_section)
-        if match:
-            if key == "C1-O":
-                occupancy_C1_O = float(match.group(1))
-                energy_C1_O = float(match.group(2))
-            elif key == "C1-C2":
-                occupancy_C1_C2 = float(match.group(1))
-                energy_C1_C2 = float(match.group(2))
-    return occupancy_C1_O, energy_C1_O, occupancy_C1_C2, energy_C1_C2
+    # 允許雙向：C1–O(a) 與 O(a)–C1；C1–C2 與 C2–C1
+    pat_c1_o  = rf"BD \(\s*1\s*\)\s*(?:C\s*{c1}\s*-\s*O\s*{a}|O\s*{a}\s*-\s*C\s*{c1})\s+([\d\.]+)\s+([-\d\.]+)"
+    pat_c1_c2 = rf"BD \(\s*1\s*\)\s*(?:C\s*{c1}\s*-\s*C\s*{c2}|C\s*{c2}\s*-\s*C\s*{c1})\s+([\d\.]+)\s+([-\d\.]+)"
+
+    m1 = re.search(pat_c1_o, nbo_section)
+    m2 = re.search(pat_c1_c2, nbo_section)
+
+    occ_c1_o = ene_c1_o = occ_c1_c2 = ene_c1_c2 = None
+    if m1:
+        occ_c1_o  = float(m1.group(1)); ene_c1_o  = float(m1.group(2))
+    if m2:
+        occ_c1_c2 = float(m2.group(1)); ene_c1_c2 = float(m2.group(2))
+    return occ_c1_o, ene_c1_o, occ_c1_c2, ene_c1_c2
 
 def extract_coordinates(log_file, c1, c2):
     coordinates = {}
@@ -1016,6 +1015,7 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
 
 
 
