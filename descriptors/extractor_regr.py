@@ -212,13 +212,13 @@ def find_oh_bonds(nbo_section):
 def find_c1_c2(nbo_section, oh_bond_atoms):
     last_found = (None, None, None, None, None, None, None)
     for a, b in oh_bond_atoms:
-        c_candidates = re.findall(rf"BD \(\s*1\s*\)\s*C\s*(\d+)\s*-\s*O\s*{a}", nbo_section)
+        c_candidates = re.findall(rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*O\s*{a}|O\s*{a}\s*-\s*C\s*(\d+))", nbo_section)
         for c in c_candidates:
             c = int(c)
-            o_d_candidates = re.findall(rf"BD \(\s*[12]\s*\)\s*C\s*{c}\s*-\s*O\s*(\d+)", nbo_section)
+            o_d_candidates = re.findall(rf"BD \(\s*[12]\s*\)\s*(?:C\s*{c}\s*-\s*O\s*(\d+)|O\s*(\d+)\s*-\s*C\s*{c})", nbo_section)
             for d in o_d_candidates:
                 d = int(d)
-                e_candidates = re.findall(rf"BD \(\s*1\s*\)\s*C\s*(\d+)\s*-\s*C\s*{c}", nbo_section)
+                e_candidates = re.findall(rf"BD \(\s*1\s*\)\s*(?:C\s*(\d+)\s*-\s*C\s*{c}|C\s*{c}\s*-\s*C\s*(\d+))", nbo_section)
                 for e in e_candidates:
                     e = int(e)
                     bond_types = re.findall(rf"BD \(\s*(1|2)\s*\)\s*(\w+)\s*(\d+)\s*-\s*(\w+)\s*(\d+)", nbo_section)
@@ -978,4 +978,5 @@ def run_full_pipeline(log_folder, xlsx_path, max_features, target="ln(kobs)",
 
     print(f"\n✅ Analysis complete!")
     return df, results, best_model
+
 
