@@ -271,7 +271,7 @@ See `requirements.txt` (NumPy, Pandas, scikit-learn, Plotly, OpenPyXL, Kaleido).
 
 If you use this pipeline in academic work, please cite it as:
 
-> DFTDescriptorPipeline, GitHub repository, (your URL), accessed YYYY-MM-DD.
+> DFTDescriptorPipeline, GitHub repository, (https://github.com/peculab/DFTDescriptorPipeline/), accessed YYYY-MM-DD.
 
 ---
 
