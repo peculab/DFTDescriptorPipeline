@@ -1,7 +1,6 @@
-pandas
-numpy
-scikit-learn
-matplotlib
-openpyxl
-morfeus-ml
-joblib
+numpy>=1.23
+pandas>=1.5
+scikit-learn>=1.2
+plotly>=5.15
+openpyxl>=3.1
+kaleido>=0.2
