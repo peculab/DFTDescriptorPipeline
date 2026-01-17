@@ -1,0 +1,6 @@
+rank,k,features,R2,Q2,CV,equation,plot_html
+1,4,ar2_homo_hartree|ar2_scf_energy_hartree|ar1_q_a|ar2_q_g,0.6470453891683188,0.4949335603450855,LOOCV,ln(kobs) = 54.05(ar2_homo_hartree) - 0.01(ar2_scf_energy_hartree) - 35.17(ar1_q_a) + 1.32(ar2_q_g) - 18.26,top1_k4_Regression_Plot.html
+2,3,ar2_homo_hartree|ar1_q_a|ar2_q_g,0.6348906842880462,0.48834249467973834,LOOCV,ln(kobs) = 63.33(ar2_homo_hartree) - 39.78(ar1_q_a) + 1.46(ar2_q_g) - 13.00,top2_k3_Regression_Plot.html
+3,4,ar2_homo_hartree|prod_q_a|ar1_q_a|ar2_q_g,0.638631644916611,0.4851211735440295,LOOCV,ln(kobs) = 57.79(ar2_homo_hartree) + 20.62(prod_q_a) - 28.02(ar1_q_a) + 1.43(ar2_q_g) - 14.07,top3_k4_Regression_Plot.html
+4,5,ar2_homo_hartree|prod_q_a|ar2_scf_energy_hartree|ar1_q_a|ar2_q_g,0.6451359888036929,0.4838675863994292,LOOCV,ln(kobs) = 51.80(ar2_homo_hartree) + 15.09(prod_q_a) - 0.01(ar2_scf_energy_hartree) - 27.46(ar1_q_a) + 1.33(ar2_q_g) - 18.02,top4_k5_Regression_Plot.html
+5,4,sum_homo_hartree|prod_q_a|ar2_q_g|diff_gap_hartree,0.6341177510765277,0.4838170138033414,LOOCV,ln(kobs) = 34.52(sum_homo_hartree) + 30.37(prod_q_a) + 1.35(ar2_q_g) - 0.89(diff_gap_hartree) + 2.01,top5_k4_Regression_Plot.html

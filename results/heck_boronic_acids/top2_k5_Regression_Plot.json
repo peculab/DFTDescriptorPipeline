@@ -1,0 +1,19 @@
+{
+  "category": "heck_boronic_acids",
+  "target": "ddG",
+  "features": [
+    "q_e",
+    "enthalpy_hartree",
+    "q_a",
+    "q_b",
+    "q_f"
+  ],
+  "metrics": {
+    "r2": 0.8887516031495112,
+    "q2": 0.7225930677999721,
+    "cv": "LOOCV",
+    "rmse": 0.22282462592071722
+  },
+  "equation_pretty": "ddG = -2.61(q_e) - 0.00(enthalpy_hartree) + 18.03(q_a) + 42.87(q_b) + 1.70(q_f) + 3.25",
+  "plot_html": "top2_k5_Regression_Plot.html"
+}

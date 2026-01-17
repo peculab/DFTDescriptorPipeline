@@ -1,0 +1,18 @@
+{
+  "category": "indigo_aryl_alkyl",
+  "target": "ln(kobs)_MeCN",
+  "features": [
+    "homo_hartree",
+    "q_a",
+    "lumo_hartree",
+    "q_f"
+  ],
+  "metrics": {
+    "r2": 0.731504738390675,
+    "q2": 0.613022160752941,
+    "cv": "LOOCV",
+    "rmse": 0.279467687864302
+  },
+  "equation_pretty": "ln(kobs)_MeCN = 24.53(homo_hartree) - 12.69(q_a) - 0.22(lumo_hartree) - 0.73(q_f) + 3.51",
+  "plot_html": "top4_k4_Regression_Plot.html"
+}

@@ -1,0 +1,19 @@
+{
+  "category": "indigo_diaryl",
+  "target": "ln(kobs)",
+  "features": [
+    "Ar1_LUMO",
+    "Ar2_v_C=O",
+    "Entry",
+    "Ar2_I_C=O",
+    "sum_enthalpy_hartree"
+  ],
+  "metrics": {
+    "r2": 0.9903099104083681,
+    "q2": 0.9667775768071737,
+    "cv": "LOOCV",
+    "rmse": 0.18315415299565674
+  },
+  "equation_pretty": "ln(kobs) = 48.42(Ar1_LUMO) - 0.22(Ar2_v_C=O) - 0.05(Entry) - 0.02(Ar2_I_C=O) + 0.00(sum_enthalpy_hartree) + 410.67",
+  "plot_html": "top4_k5_Regression_Plot.html"
+}

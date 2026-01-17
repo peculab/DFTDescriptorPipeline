@@ -1,0 +1,18 @@
+{
+  "category": "azoarene",
+  "target": "ln(kobs)",
+  "features": [
+    "sum_homo_hartree",
+    "prod_q_a",
+    "ar2_q_g",
+    "diff_gap_hartree"
+  ],
+  "metrics": {
+    "r2": 0.6341177510765277,
+    "q2": 0.4838170138033414,
+    "cv": "LOOCV",
+    "rmse": 2.6797327508563833
+  },
+  "equation_pretty": "ln(kobs) = 34.52(sum_homo_hartree) + 30.37(prod_q_a) + 1.35(ar2_q_g) - 0.89(diff_gap_hartree) + 2.01",
+  "plot_html": "top5_k4_Regression_Plot.html"
+}

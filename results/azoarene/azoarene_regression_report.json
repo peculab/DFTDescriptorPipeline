@@ -1,0 +1,45 @@
+{
+  "category": "azoarene",
+  "target": "ln(kobs)",
+  "join_mode": "pair:Ar1+Ar2",
+  "n_points": 26,
+  "metrics": {
+    "r2": 0.6470453891683188,
+    "q2": 0.4949335603450854,
+    "q2_cv": "LOOCV",
+    "rmse": 2.6319658139421875
+  },
+  "best_features": [
+    "ar2_homo_hartree",
+    "ar2_scf_energy_hartree",
+    "ar1_q_a",
+    "ar2_q_g"
+  ],
+  "equation_pretty": "ln(kobs) = 54.05(ar2_homo_hartree) - 0.01(ar2_scf_energy_hartree) - 35.17(ar1_q_a) + 1.32(ar2_q_g) - 18.26",
+  "search": {
+    "ks": [
+      3,
+      4,
+      5
+    ],
+    "min_r2": 0.75,
+    "min_q2": 0.75,
+    "cand_pool": 25,
+    "max_combos": 250000,
+    "sample_combos": 80000,
+    "prefilter_top": 0,
+    "cv_mode": "loocv",
+    "n_splits": "5",
+    "dedup_corr": 0.9995,
+    "status": "BEST_NO_PASS",
+    "n_evaluated": 9248,
+    "n_passing": 0
+  },
+  "outputs": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\azoarene\\azoarene_features.csv",
+    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\azoarene\\azoarene_subset_search.csv",
+    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\azoarene\\azoarene_top_models_by_k.csv",
+    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\azoarene\\azoarene_Regression_Plot.html",
+    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\azoarene\\azoarene_Coef_Plot.html"
+  }
+}

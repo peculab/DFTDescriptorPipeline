@@ -1,0 +1,46 @@
+{
+  "category": "indigo_diaryl",
+  "target": "ln(kobs)",
+  "join_mode": "pair:Ar1+Ar2",
+  "n_points": 13,
+  "metrics": {
+    "r2": 0.9942250017610773,
+    "q2": 0.9792869362963176,
+    "q2_cv": "LOOCV",
+    "rmse": 0.14139329084126448
+  },
+  "best_features": [
+    "Ar2_LUMO",
+    "Ar1_v_C=O",
+    "Entry",
+    "ar2_enthalpy_hartree",
+    "Ar1_I_C=O"
+  ],
+  "equation_pretty": "ln(kobs) = 46.18(Ar2_LUMO) - 0.22(Ar1_v_C=O) - 0.05(Entry) + 0.00(ar2_enthalpy_hartree) - 0.02(Ar1_I_C=O) + 421.67",
+  "search": {
+    "ks": [
+      3,
+      4,
+      5
+    ],
+    "min_r2": 0.75,
+    "min_q2": 0.75,
+    "cand_pool": 25,
+    "max_combos": 250000,
+    "sample_combos": 80000,
+    "prefilter_top": 0,
+    "cv_mode": "loocv",
+    "n_splits": "5",
+    "dedup_corr": 0.9995,
+    "status": "PASS",
+    "n_evaluated": 16473,
+    "n_passing": 4686
+  },
+  "outputs": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_features.csv",
+    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_subset_search.csv",
+    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_top_models_by_k.csv",
+    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_Regression_Plot.html",
+    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_Coef_Plot.html"
+  }
+}

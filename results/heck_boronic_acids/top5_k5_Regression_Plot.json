@@ -1,0 +1,19 @@
+{
+  "category": "heck_boronic_acids",
+  "target": "ddG",
+  "features": [
+    "q_e",
+    "q_a",
+    "q_mean",
+    "q_b",
+    "q_f"
+  ],
+  "metrics": {
+    "r2": 0.8596194868523229,
+    "q2": 0.6834020431264884,
+    "cv": "LOOCV",
+    "rmse": 0.25030511138515066
+  },
+  "equation_pretty": "ddG = -2.76(q_e) + 21.32(q_a) - 1.08(q_mean) + 47.28(q_b) + 2.24(q_f) + 4.80",
+  "plot_html": "top5_k5_Regression_Plot.html"
+}

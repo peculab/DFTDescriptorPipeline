@@ -1,0 +1,19 @@
+{
+  "category": "indigo_diaryl",
+  "target": "ln(kobs)",
+  "features": [
+    "prod_homo_hartree",
+    "Ar1_v_C=O",
+    "Ar1_HOMO",
+    "Ar2_I_C=O",
+    "Ar1_I_C=O"
+  ],
+  "metrics": {
+    "r2": 0.9869333469532208,
+    "q2": 0.9675303668504167,
+    "cv": "LOOCV",
+    "rmse": 0.21268411492652892
+  },
+  "equation_pretty": "ln(kobs) = -1311.80(prod_homo_hartree) - 0.27(Ar1_v_C=O) - 811.04(Ar1_HOMO) - 0.29(Ar2_I_C=O) + 0.27(Ar1_I_C=O) + 383.82",
+  "plot_html": "top3_k5_Regression_Plot.html"
+}

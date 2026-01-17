@@ -1,0 +1,6 @@
+rank,k,features,R2,Q2,CV,equation,plot_html
+1,5,Ar2_LUMO|Ar1_v_C=O|Entry|ar2_enthalpy_hartree|Ar1_I_C=O,0.9942250017610773,0.9792869362963175,LOOCV,ln(kobs) = 46.18(Ar2_LUMO) - 0.22(Ar1_v_C=O) - 0.05(Entry) + 0.00(ar2_enthalpy_hartree) - 0.02(Ar1_I_C=O) + 421.67,top1_k5_Regression_Plot.html
+2,5,Ar2_LUMO|Ar1_v_C=O|Ar2_NBO_-O|ar2_enthalpy_hartree|Ar1_I_C=O,0.9911237616488922,0.9698241408885142,LOOCV,ln(kobs) = 36.82(Ar2_LUMO) - 0.25(Ar1_v_C=O) - 55.63(Ar2_NBO_-O) + 0.00(ar2_enthalpy_hartree) - 0.02(Ar1_I_C=O) + 430.94,top2_k5_Regression_Plot.html
+3,5,prod_homo_hartree|Ar1_v_C=O|Ar1_HOMO|Ar2_I_C=O|Ar1_I_C=O,0.9869333469532208,0.9675303668504167,LOOCV,ln(kobs) = -1311.80(prod_homo_hartree) - 0.27(Ar1_v_C=O) - 811.04(Ar1_HOMO) - 0.29(Ar2_I_C=O) + 0.27(Ar1_I_C=O) + 383.82,top3_k5_Regression_Plot.html
+4,5,Ar1_LUMO|Ar2_v_C=O|Entry|Ar2_I_C=O|sum_enthalpy_hartree,0.9903099104083681,0.9667775768071737,LOOCV,ln(kobs) = 48.42(Ar1_LUMO) - 0.22(Ar2_v_C=O) - 0.05(Entry) - 0.02(Ar2_I_C=O) + 0.00(sum_enthalpy_hartree) + 410.67,top4_k5_Regression_Plot.html
+5,5,Ar1_LUMO|Ar2_v_C=O|Entry|Ar2_I_C=O|ar2_enthalpy_hartree,0.9915979904889566,0.9655202870905902,LOOCV,ln(kobs) = 53.32(Ar1_LUMO) - 0.19(Ar2_v_C=O) - 0.05(Entry) - 0.02(Ar2_I_C=O) + 0.00(ar2_enthalpy_hartree) + 363.93,top5_k5_Regression_Plot.html
