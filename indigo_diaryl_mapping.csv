@@ -1,0 +1,13 @@
+category,logfile,a,b,c,d,e,f,g,ok,error,elapsed
+indigo_diaryl,3-CF3.log,9,18,7,8,6,1,5,1,,0.015
+indigo_diaryl,3-CHO.log,9,16,7,8,6,1,5,1,,0.015
+indigo_diaryl,3-CN.log,9,16,7,8,6,1,5,1,,0.013
+indigo_diaryl,3-NO2.log,9,17,7,8,6,1,5,1,,0.015
+indigo_diaryl,3-OMe.log,9,16,7,8,6,1,5,1,,0.017
+indigo_diaryl,4-CF3.log,9,18,7,8,6,1,5,1,,0.017
+indigo_diaryl,4-CN.log,9,16,7,8,6,1,5,1,,0.013
+indigo_diaryl,4-CO2Me.log,9,18,7,8,6,1,5,1,,0.018
+indigo_diaryl,4-F.log,10,15,8,9,6,1,5,1,,0.012
+indigo_diaryl,4-NO2.log,9,17,7,8,6,1,5,1,,0.014
+indigo_diaryl,4-OMe.log,9,16,7,8,6,1,5,1,,0.013
+indigo_diaryl,H.log,9,15,7,8,6,1,5,1,,0.01

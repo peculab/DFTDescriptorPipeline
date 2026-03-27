@@ -1,0 +1,18 @@
+{
+  "category": "azoarene",
+  "target": "ln(kobs)",
+  "features": [
+    "sum_homo_hartree",
+    "ar2_scf_energy_hartree",
+    "prod_lumo_hartree",
+    "ar2_q_g"
+  ],
+  "metrics": {
+    "r2": 0.7534950581423431,
+    "q2": 0.5526464094121359,
+    "cv": "LOOCV",
+    "rmse": 2.1995489392322627
+  },
+  "equation_pretty": "ln(kobs) = f(sum_homo_hartree, ar2_scf_energy_hartree, prod_lumo_hartree, ar2_q_g) [nonlinear model]",
+  "plot_html": "top2_k4_Regression_Plot.html"
+}

@@ -57,11 +57,13 @@ except Exception as e:
 
 try:
     from sklearn.impute import SimpleImputer
+    from sklearn.inspection import permutation_importance
     from sklearn.linear_model import LinearRegression, Ridge
     from sklearn.metrics import mean_squared_error, r2_score
     from sklearn.model_selection import KFold, LeaveOneOut, cross_val_predict
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
+    from sklearn.svm import SVR
 except Exception as e:
     raise ImportError("scikit-learn is required: pip install scikit-learn") from e
 
@@ -82,12 +84,30 @@ ATOM_INDEX_COLS_DEFAULT = ["a", "b", "c", "d", "e", "f", "g"]
 
 # -------------------- regressor --------------------
 
+def _get_model_name() -> str:
+    return os.environ.get("REGRESSOR", "ols").strip().lower()
+
+
 def _make_regressor():
-    reg = os.environ.get("REGRESSOR", "ols").strip().lower()
+    reg = _get_model_name()
     if reg == "ridge":
         alpha = float(os.environ.get("RIDGE_ALPHA", "1.0"))
         return Ridge(alpha=alpha)
+    if reg in ("svm", "svr", "svr_rbf", "svm_rbf"):
+        c = float(os.environ.get("SVR_C", "10.0"))
+        epsilon = float(os.environ.get("SVR_EPSILON", "0.1"))
+        gamma = os.environ.get("SVR_GAMMA", "scale").strip() or "scale"
+        return SVR(kernel="rbf", C=c, epsilon=epsilon, gamma=gamma)
+    if reg in ("svr_linear", "svm_linear"):
+        c = float(os.environ.get("SVR_C", "10.0"))
+        epsilon = float(os.environ.get("SVR_EPSILON", "0.1"))
+        return SVR(kernel="linear", C=c, epsilon=epsilon)
     return LinearRegression()
+
+
+def _is_linear_model(model: Pipeline) -> bool:
+    lr = model.named_steps["lr"]
+    return hasattr(lr, "coef_") and hasattr(lr, "intercept_")
 
 
 # -------------------- log parsing --------------------
@@ -443,12 +463,15 @@ def _fit_pipeline(X: pd.DataFrame, y: pd.Series) -> Pipeline:
     ).fit(X, y)
 
 
-def _orig_unit_coeffs(model: Pipeline) -> Tuple[np.ndarray, float]:
+def _orig_unit_coeffs(model: Pipeline) -> Tuple[Optional[np.ndarray], Optional[float]]:
+    if not _is_linear_model(model):
+        return None, None
+
     scaler: StandardScaler = model.named_steps["scaler"]
     lr = model.named_steps["lr"]
 
-    coef_scaled = np.asarray(lr.coef_, dtype=float)
-    intercept_scaled = float(lr.intercept_)
+    coef_scaled = np.asarray(lr.coef_, dtype=float).reshape(-1)
+    intercept_scaled = float(np.asarray(lr.intercept_, dtype=float).reshape(-1)[0])
 
     scale = np.asarray(scaler.scale_, dtype=float)
     mean = np.asarray(scaler.mean_, dtype=float)
@@ -458,7 +481,10 @@ def _orig_unit_coeffs(model: Pipeline) -> Tuple[np.ndarray, float]:
     return coef_orig, intercept_orig
 
 
-def _equation_pretty(feature_names: List[str], coef_orig: np.ndarray, intercept_orig: float, y_name: str, decimals: int = 2) -> str:
+def _equation_pretty(feature_names: List[str], coef_orig: Optional[np.ndarray], intercept_orig: Optional[float], y_name: str, decimals: int = 2) -> str:
+    if coef_orig is None or intercept_orig is None:
+        return f"{y_name} = f({', '.join(feature_names)}) [nonlinear model]"
+
     parts: List[str] = []
     for f, c in zip(feature_names, coef_orig):
         term = f"{abs(float(c)):.{decimals}f}({f})"
@@ -473,6 +499,78 @@ def _equation_pretty(feature_names: List[str], coef_orig: np.ndarray, intercept_
 
 
 # -------------------- subset search --------------------
+
+
+
+def _compute_feature_importance(model: Pipeline, X: pd.DataFrame, y: pd.Series, random_state: int = 42) -> pd.DataFrame:
+    result = permutation_importance(model, X, y, n_repeats=20, random_state=random_state, scoring="r2")
+    imp = pd.DataFrame({
+        "feature": list(X.columns),
+        "importance_mean": result.importances_mean,
+        "importance_std": result.importances_std,
+    }).sort_values("importance_mean", ascending=False, ignore_index=True)
+    return imp
+
+
+def _save_descriptor_correlations(df: pd.DataFrame, target: str, output_prefix: str, category_name: str) -> str:
+    rows: List[Dict[str, float]] = []
+    y = pd.to_numeric(df[target], errors="coerce")
+    for c in df.columns:
+        if c == target or _is_leak_feature(c, target):
+            continue
+        if not pd.api.types.is_numeric_dtype(df[c]):
+            continue
+        x = pd.to_numeric(df[c], errors="coerce")
+        valid = pd.concat([x, y], axis=1).dropna()
+        if valid.shape[0] < 3 or valid.iloc[:, 0].nunique() <= 1:
+            continue
+        corr = float(valid.iloc[:, 0].corr(valid.iloc[:, 1]))
+        rows.append({
+            "feature": c,
+            "pearson_corr": corr,
+            "abs_pearson_corr": abs(corr),
+            "n_valid": int(valid.shape[0]),
+        })
+
+    corr_df = pd.DataFrame(rows).sort_values("abs_pearson_corr", ascending=False, ignore_index=True)
+    out_csv = output_prefix + "_descriptor_correlations.csv"
+    corr_df.to_csv(out_csv, index=False, encoding="utf-8-sig")
+
+    if not corr_df.empty:
+        top_df = corr_df.head(20).iloc[::-1]
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=top_df["pearson_corr"], y=top_df["feature"], orientation="h", name="Pearson r"))
+        fig.update_layout(
+            title=f"{category_name} | Descriptor Correlations with {target} (Top 20)",
+            xaxis_title="Pearson correlation",
+            yaxis_title="Descriptor",
+        )
+        fig.write_html(output_prefix + "_descriptor_correlations.html", include_plotlyjs="cdn")
+    return out_csv
+
+
+def _save_feature_importance_outputs(model: Pipeline, X: pd.DataFrame, y: pd.Series, output_prefix: str, category_name: str) -> str:
+    imp_df = _compute_feature_importance(model, X, y)
+    out_csv = output_prefix + "_feature_importance.csv"
+    imp_df.to_csv(out_csv, index=False, encoding="utf-8-sig")
+
+    if not imp_df.empty:
+        top_df = imp_df.head(20).iloc[::-1]
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=top_df["importance_mean"],
+            y=top_df["feature"],
+            orientation="h",
+            error_x=dict(type="data", array=top_df["importance_std"]),
+            name="Permutation importance",
+        ))
+        fig.update_layout(
+            title=f"{category_name} | Feature Importance (Permutation, Top 20)",
+            xaxis_title="Mean importance (R² drop)",
+            yaxis_title="Feature",
+        )
+        fig.write_html(output_prefix + "_feature_importance.html", include_plotlyjs="cdn")
+    return out_csv
 
 def _combo_iter(features: List[str], k: int, max_combos: int, sample_combos: int) -> Tuple[bool, List[Tuple[str, ...]]]:
     n = len(features)
@@ -675,6 +773,10 @@ def run_regression_from_mapping(
     max_combos = int(os.environ.get("MAX_COMBOS", "250000"))
     sample_combos = int(os.environ.get("SAMPLE_COMBOS", "80000"))
 
+    t_case0 = time.time()
+    stage_times: Dict[str, float] = {}
+    model_name = _get_model_name()
+
     _log(f"[START] {category_name} regression")
     _log(f"  mapping_csv : {mapping_csv}")
     _log(f"  log_folder  : {log_folder}")
@@ -684,26 +786,33 @@ def run_regression_from_mapping(
 
     log_folder_p = Path(log_folder)
 
+    t0 = time.time()
     # mapping
     mdf = pd.read_csv(mapping_csv)
     if "ok" in mdf.columns:
         mdf = mdf[mdf["ok"] == 1].copy()
     mdf["logfile"] = mdf["logfile"].astype(str).str.strip()
     mapping_keys = mdf["logfile"].map(_to_log_key).tolist()
+    stage_times["load_mapping_seconds"] = round(time.time() - t0, 6)
 
+    t0 = time.time()
     # kinetics
     kin = pd.read_excel(xlsx_path)
     kin = _coerce_numeric_columns(kin, skip={'Ar1','Ar2','Ar','Compound'})
     if target not in kin.columns:
         raise ValueError(f"Target column '{target}' not found in xlsx.")
+    stage_times["load_kinetics_seconds"] = round(time.time() - t0, 6)
 
+    t0 = time.time()
     # parse logs -> per-log descriptors
     feat_df = _build_feature_table(mdf, log_folder_p, atom_index_cols)
+    stage_times["parse_logs_seconds"] = round(time.time() - t0, 6)
 
     # decide join mode
     join_mode = "unknown"
     use_pair = ("Ar1" in kin.columns and "Ar2" in kin.columns and join_col is None)
 
+    t0 = time.time()
     if use_pair:
         merged, join_mode = _build_pair_features(kin, feat_df, target=target, col1="Ar1", col2="Ar2")
         merged = merged.dropna(subset=[target]).copy()
@@ -731,6 +840,8 @@ def run_regression_from_mapping(
         merged = merged.dropna(subset=[target]).copy()
         merged = _coerce_numeric_columns(merged, skip={'logfile','logkey','logkey1','logkey2','Ar1','Ar2','Ar','Compound', target})
 
+    stage_times["build_merged_dataset_seconds"] = round(time.time() - t0, 6)
+
     n = int(merged.shape[0])
     if n < 5:
         raise ValueError(f"Not enough rows for regression: n={n}")
@@ -738,6 +849,10 @@ def run_regression_from_mapping(
     # save merged table for inspection
     out_features_csv = output_prefix + "_features.csv"
     merged.to_csv(out_features_csv, index=False, encoding="utf-8-sig")
+
+    t0 = time.time()
+    descriptor_corr_csv = _save_descriptor_correlations(merged, target, output_prefix, category_name)
+    stage_times["descriptor_correlation_seconds"] = round(time.time() - t0, 6)
 
     # ks to search
     if max_features < 3:
@@ -751,6 +866,7 @@ def run_regression_from_mapping(
     _log(f"  [STAGE] Subset search k={ks} | MIN_R2={min_r2} MIN_Q2={min_q2} | CAND_POOL={cand_pool}")
     _log(f"          CV_MODE={os.environ.get('CV_MODE','loocv')} N_SPLITS={os.environ.get('N_SPLITS','5')} | MAX_COMBOS={max_combos} SAMPLE_COMBOS={sample_combos}")
 
+    t0 = time.time()
     best, passing_df, eval_df = _subset_search(
         merged,
         target=target,
@@ -761,6 +877,7 @@ def run_regression_from_mapping(
         max_combos=max_combos,
         sample_combos=sample_combos,
     )
+    stage_times["subset_search_seconds"] = round(time.time() - t0, 6)
 
     # outputs
     out_search_csv = output_prefix + "_subset_search.csv"
@@ -785,8 +902,10 @@ def run_regression_from_mapping(
     X_best = merged[best_features]
     y = pd.to_numeric(merged[target], errors="coerce")
 
+    t0 = time.time()
     model = _fit_pipeline(X_best, y)
     yhat = model.predict(X_best)
+    stage_times["fit_best_model_seconds"] = round(time.time() - t0, 6)
 
     r2 = float(r2_score(y, yhat))
     rmse = float(math.sqrt(mean_squared_error(y, yhat)))
@@ -825,9 +944,12 @@ def run_regression_from_mapping(
         except Exception as e:
             _log(f"  [WARN] DIAG_CV failed: {e}")
 
+    t0 = time.time()
     coef_orig, intercept_orig = _orig_unit_coeffs(model)
     decimals = int(os.environ.get("FORMULA_DECIMALS", "2"))
     formula_pretty = _equation_pretty(best_features, coef_orig, intercept_orig, target, decimals=decimals)
+    feature_importance_csv = _save_feature_importance_outputs(model, X_best, y, output_prefix, category_name)
+    stage_times["feature_importance_seconds"] = round(time.time() - t0, 6)
 
     # Plotly XY
     x = np.asarray(y, dtype=float)
@@ -866,20 +988,29 @@ def run_regression_from_mapping(
         bgcolor="rgba(255,255,255,0.85)"
     )
 
+    t0 = time.time()
     out_plot = output_prefix + "_Regression_Plot.html"
     fig.write_html(out_plot, include_plotlyjs="cdn")
 
-    # Coef bar
-    coef_order = np.argsort(coef_orig)[::-1]
-    feat_ordered = [best_features[i] for i in coef_order]
-    coef_ordered = [float(coef_orig[i]) for i in coef_order]
-
+    # Coef / importance bar
     fig2 = go.Figure()
-    fig2.add_trace(go.Bar(x=feat_ordered, y=coef_ordered, name="Coef (orig units)"))
-    fig2.update_layout(title=f"{category_name} Coefficients (original feature units)",
-                       xaxis_title="Feature", yaxis_title="Coefficient")
+    if coef_orig is not None:
+        coef_order = np.argsort(coef_orig)[::-1]
+        feat_ordered = [best_features[i] for i in coef_order]
+        coef_ordered = [float(coef_orig[i]) for i in coef_order]
+        fig2.add_trace(go.Bar(x=feat_ordered, y=coef_ordered, name="Coef (orig units)"))
+        fig2.update_layout(title=f"{category_name} Coefficients (original feature units)",
+                           xaxis_title="Feature", yaxis_title="Coefficient")
+    else:
+        imp_df = pd.read_csv(feature_importance_csv)
+        fig2.add_trace(go.Bar(x=imp_df["feature"], y=imp_df["importance_mean"], name="Permutation importance"))
+        fig2.update_layout(title=f"{category_name} Feature Importance (nonlinear model)",
+                           xaxis_title="Feature", yaxis_title="Permutation importance")
     out_coef_plot = output_prefix + "_Coef_Plot.html"
     fig2.write_html(out_coef_plot, include_plotlyjs="cdn")
+    stage_times["plot_write_seconds"] = round(time.time() - t0, 6)
+
+    stage_times["total_case_seconds"] = round(time.time() - t_case0, 6)
 
     # report json
     report = {
@@ -887,6 +1018,7 @@ def run_regression_from_mapping(
         "target": target,
         "join_mode": join_mode,
         "n_points": n,
+        "model": {"name": model_name},
         "metrics": {"r2": r2, "q2": q2, "q2_cv": cv_name, "rmse": rmse},
         "best_features": best_features,
         "equation_pretty": formula_pretty,
@@ -907,27 +1039,33 @@ def run_regression_from_mapping(
         },
         "outputs": {
             "features_csv": out_features_csv,
+            "descriptor_correlations_csv": descriptor_corr_csv,
+            "feature_importance_csv": feature_importance_csv,
             "subset_search_csv": out_search_csv,
             "top_models_by_k_csv": out_top_csv,
             "plot_html": out_plot,
             "coef_plot_html": out_coef_plot,
         },
+        "timing_seconds": stage_times,
     }
     out_report = output_prefix + "_regression_report.json"
     Path(out_report).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(
-        f"  [OK] {category_name} subset-search regression | status={best['status']} | "
+        f"  [OK] {category_name} subset-search regression | model={model_name} | status={best['status']} | "
         f"n={n} | k={len(best_features)} | R2={r2:.3f} | Q2({cv_name})={q2:.3f} | RMSE={rmse:.3g}"
     )
     print(f"       join_mode = {join_mode}")
     print(f"       best_features = {best_features}")
     print(f"       equation_pretty = {formula_pretty}")
+    print(f"       descriptor_correlations_csv = {descriptor_corr_csv}")
+    print(f"       feature_importance_csv = {feature_importance_csv}")
     print(f"       passing_models_csv = {out_search_csv}")
     print(f"       top_models_by_k_csv = {out_top_csv}")
     print(f"       - {out_plot}")
     print(f"       - {out_coef_plot}")
     print(f"       - {out_report}")
+    print(f"       timing_seconds = {stage_times}")
 
     if open_browser:
         try:

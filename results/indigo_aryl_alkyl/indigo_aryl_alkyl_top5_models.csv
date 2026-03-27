@@ -3,4 +3,4 @@ rank,k,features,R2,Q2,CV,equation,plot_html
 2,3,homo_hartree|q_b|q_std,0.737021976699495,0.6235695026815136,LOOCV,ln(kobs)_MeCN = 24.61(homo_hartree) + 25.51(q_b) + 1.52(q_std) - 2.73,top2_k3_Regression_Plot.html
 3,5,homo_hartree|q_a|q_f|scf_energy_hartree|q_b,0.774649774358941,0.6195242634224287,LOOCV,ln(kobs)_MeCN = 27.77(homo_hartree) - 3.27(q_a) - 0.61(q_f) + 0.00(scf_energy_hartree) + 38.72(q_b) - 6.13,top3_k5_Regression_Plot.html
 4,4,homo_hartree|q_a|lumo_hartree|q_f,0.731504738390675,0.613022160752941,LOOCV,ln(kobs)_MeCN = 24.53(homo_hartree) - 12.69(q_a) - 0.22(lumo_hartree) - 0.73(q_f) + 3.51,top4_k4_Regression_Plot.html
-5,4,homo_hartree|q_f|scf_energy_hartree|q_b,0.7635233728502826,0.6102601808249339,LOOCV,ln(kobs)_MeCN = 28.72(homo_hartree) - 0.48(q_f) + 0.00(scf_energy_hartree) + 43.65(q_b) - 5.49,top5_k4_Regression_Plot.html
+5,4,homo_hartree|q_f|scf_energy_hartree|q_b,0.7635233728502826,0.6102601808249338,LOOCV,ln(kobs)_MeCN = 28.72(homo_hartree) - 0.48(q_f) + 0.00(scf_energy_hartree) + 43.65(q_b) - 5.49,top5_k4_Regression_Plot.html

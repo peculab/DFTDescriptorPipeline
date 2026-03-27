@@ -12,7 +12,7 @@
     "r2": 0.9911237616488922,
     "q2": 0.9698241408885142,
     "cv": "LOOCV",
-    "rmse": 0.1752941215308297
+    "rmse": 0.1752941215308298
   },
   "equation_pretty": "ln(kobs) = 36.82(Ar2_LUMO) - 0.25(Ar1_v_C=O) - 55.63(Ar2_NBO_-O) + 0.00(ar2_enthalpy_hartree) - 0.02(Ar1_I_C=O) + 430.94",
   "plot_html": "top2_k5_Regression_Plot.html"

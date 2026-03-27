@@ -9,10 +9,10 @@
     "ar2_enthalpy_hartree"
   ],
   "metrics": {
-    "r2": 0.9915979904889566,
+    "r2": 0.9915979904889565,
     "q2": 0.9655202870905902,
     "cv": "LOOCV",
-    "rmse": 0.17054714706907512
+    "rmse": 0.17054714706907526
   },
   "equation_pretty": "ln(kobs) = 53.32(Ar1_LUMO) - 0.19(Ar2_v_C=O) - 0.05(Entry) - 0.02(Ar2_I_C=O) + 0.00(ar2_enthalpy_hartree) + 363.93",
   "plot_html": "top5_k5_Regression_Plot.html"

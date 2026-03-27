@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -53,11 +55,18 @@ GLOBAL_ENV = {
 }
 
 # Per-dataset overrides (kept minimal to avoid affecting other stable cases)
+# Easy model swapping:
+# - OLS         : REGRESSOR=ols
+# - Ridge       : REGRESSOR=ridge      + RIDGE_ALPHA=...
+# - SVM (RBF)   : REGRESSOR=svr_rbf    + SVR_C / SVR_EPSILON / SVR_GAMMA
+# - SVM (Linear): REGRESSOR=svr_linear + SVR_C / SVR_EPSILON
 CASE_ENV_OVERRIDES = {
     "azoarene": {
         "GAUSS_LUMO_MODE": "lastblock_first",  # more robust LUMO when virt blocks split
-        "REGRESSOR": "ridge",
-        "RIDGE_ALPHA": "10.0",
+        "REGRESSOR": "svr_rbf",
+        "SVR_C": "10.0",
+        "SVR_EPSILON": "0.1",
+        "SVR_GAMMA": "scale",
         # "OUTLIER_DROP_TOP": "2",
     }
 }
@@ -118,6 +127,8 @@ def run_mapping_extraction(base: Path) -> None:
             f"  BASE      : {base}\n"
             f"  script dir: {_script_dir()}"
         )
+
+    overall_rows = []
 
     for case in CASES:
         category = case["category"]
@@ -314,6 +325,8 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
     prev_force_k = os.environ.get("FORCE_K")
     os.environ["FORCE_K"] = ",".join(str(k) for k in K_LIST)
 
+    overall_rows = []
+
     for case in CASES:
         category = case["category"]
         log_folder = base / _norm_rel(case["log_subdir"])
@@ -332,6 +345,7 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
         print(f"  xlsx    : {xlsx_path}")
         print(f"  target  : {target}")
         print(f"  results : {case_dir}")
+        case_t0 = time.time()
 
         # Apply per-category env overrides (restore after finishing this category)
         prev_env: Dict[str, str] = {}
@@ -363,6 +377,7 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
             # Rank + record top N models and generate plots for each.
             top_models_csv = Path(f"{out_prefix}_top_models_by_k.csv")
             merged_csv = Path(f"{out_prefix}_features.csv")
+            report_json = Path(f"{out_prefix}_regression_report.json")
 
             top_rows = _load_top_models(top_models_csv, TOP_N_MODELS)
             if not top_rows:
@@ -408,6 +423,34 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
             except Exception as e:
                 print(f"  [WARN] Failed to write top-N summary CSV: {e}")
 
+            # Case-level timing + summary row
+            case_elapsed = round(time.time() - case_t0, 6)
+            case_model = overrides.get("REGRESSOR", os.environ.get("REGRESSOR", "ols"))
+            summary = {
+                "category": category,
+                "target": target,
+                "model": case_model,
+                "elapsed_seconds_batch_runner": case_elapsed,
+                "top_models_csv": str(top_models_csv),
+                "regression_report_json": str(report_json),
+            }
+            if report_json.exists():
+                try:
+                    report = json.loads(report_json.read_text(encoding="utf-8"))
+                    summary.update({
+                        "best_r2": report.get("metrics", {}).get("r2"),
+                        "best_q2": report.get("metrics", {}).get("q2"),
+                        "best_rmse": report.get("metrics", {}).get("rmse"),
+                        "best_features": "|".join(report.get("best_features", [])),
+                        "total_case_seconds_pipeline": report.get("timing_seconds", {}).get("total_case_seconds"),
+                    })
+                except Exception as e:
+                    print(f"  [WARN] Failed to read report JSON for summary: {e}")
+            overall_rows.append(summary)
+            Path(case_dir / f"{category}_timing_summary.json").write_text(
+                json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+
         finally:
             # Restore per-category overrides
             for k_env in overrides.keys():
@@ -423,6 +466,13 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
         os.environ.pop("FORCE_K", None)
     else:
         os.environ["FORCE_K"] = prev_force_k
+
+    if overall_rows:
+        try:
+            import pandas as pd
+            pd.DataFrame(overall_rows).to_csv(results_root / "all_cases_summary.csv", index=False, encoding="utf-8-sig")
+        except Exception as e:
+            print(f"[WARN] Failed to write all_cases_summary.csv: {e}")
 
     print("=== All regressions finished. ===")
 

@@ -1,6 +1,6 @@
 rank,k,features,R2,Q2,CV,equation,plot_html
-1,5,q_e|q_a|q_d|q_b|q_f,0.8887489655585703,0.7449548987480983,LOOCV,ddG = -2.22(q_e) + 22.00(q_a) - 5.97(q_d) + 45.89(q_b) + 2.81(q_f) - 0.34,top1_k5_Regression_Plot.html
+1,5,q_e|q_a|q_d|q_b|q_f,0.8887489655585703,0.7449548987480984,LOOCV,ddG = -2.22(q_e) + 22.00(q_a) - 5.97(q_d) + 45.89(q_b) + 2.81(q_f) - 0.34,top1_k5_Regression_Plot.html
 2,5,q_e|enthalpy_hartree|q_a|q_b|q_f,0.8887516031495112,0.7225930677999721,LOOCV,ddG = -2.61(q_e) - 0.00(enthalpy_hartree) + 18.03(q_a) + 42.87(q_b) + 1.70(q_f) + 3.25,top2_k5_Regression_Plot.html
-3,4,q_e|q_a|q_b|q_f,0.856735710972815,0.719580752524969,LOOCV,ddG = -2.71(q_e) + 20.13(q_a) + 47.76(q_b) + 2.27(q_f) + 4.03,top3_k4_Regression_Plot.html
+3,4,q_e|q_a|q_b|q_f,0.8567357109728151,0.7195807525249691,LOOCV,ddG = -2.71(q_e) + 20.13(q_a) + 47.76(q_b) + 2.27(q_f) + 4.03,top3_k4_Regression_Plot.html
 4,5,q_std|q_a|q_c|q_d|q_b,0.8545289664165764,0.7166779725559187,LOOCV,ddG = -8.84(q_std) + 18.65(q_a) + 2.22(q_c) - 12.00(q_d) + 28.77(q_b) - 1.19,top4_k5_Regression_Plot.html
-5,5,q_e|q_a|q_mean|q_b|q_f,0.8596194868523229,0.6834020431264884,LOOCV,ddG = -2.76(q_e) + 21.32(q_a) - 1.08(q_mean) + 47.28(q_b) + 2.24(q_f) + 4.80,top5_k5_Regression_Plot.html
+5,5,q_e|q_a|q_mean|q_b|q_f,0.859619486852323,0.6834020431264884,LOOCV,ddG = -2.76(q_e) + 21.32(q_a) - 1.08(q_mean) + 47.28(q_b) + 2.24(q_f) + 4.80,top5_k5_Regression_Plot.html

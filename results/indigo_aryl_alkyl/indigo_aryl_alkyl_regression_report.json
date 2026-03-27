@@ -3,6 +3,9 @@
   "target": "ln(kobs)_MeCN",
   "join_mode": "single:Ar1",
   "n_points": 21,
+  "model": {
+    "name": "ols"
+  },
   "metrics": {
     "r2": 0.7330131263122153,
     "q2": 0.6313274538599832,
@@ -35,10 +38,24 @@
     "n_passing": 0
   },
   "outputs": {
-    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_features.csv",
-    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_subset_search.csv",
-    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_top_models_by_k.csv",
-    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_Regression_Plot.html",
-    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_Coef_Plot.html"
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_features.csv",
+    "descriptor_correlations_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_descriptor_correlations.csv",
+    "feature_importance_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_feature_importance.csv",
+    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_subset_search.csv",
+    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_top_models_by_k.csv",
+    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_Regression_Plot.html",
+    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_Coef_Plot.html"
+  },
+  "timing_seconds": {
+    "load_mapping_seconds": 0.012002,
+    "load_kinetics_seconds": 0.029004,
+    "parse_logs_seconds": 1.586939,
+    "build_merged_dataset_seconds": 0.005007,
+    "descriptor_correlation_seconds": 0.026547,
+    "subset_search_seconds": 121.896004,
+    "fit_best_model_seconds": 0.002999,
+    "feature_importance_seconds": 0.103551,
+    "plot_write_seconds": 0.026999,
+    "total_case_seconds": 123.794565
   }
 }

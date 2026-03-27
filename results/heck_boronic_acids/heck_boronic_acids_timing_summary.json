@@ -1,0 +1,13 @@
+{
+  "category": "heck_boronic_acids",
+  "target": "ddG",
+  "model": "ols",
+  "elapsed_seconds_batch_runner": 94.141994,
+  "top_models_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_top_models_by_k.csv",
+  "regression_report_json": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_regression_report.json",
+  "best_r2": 0.8887489655585703,
+  "best_q2": 0.7449548987480984,
+  "best_rmse": 0.22282726738229264,
+  "best_features": "q_e|q_a|q_d|q_b|q_f",
+  "total_case_seconds_pipeline": 93.612573
+}

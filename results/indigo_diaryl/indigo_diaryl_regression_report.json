@@ -3,11 +3,14 @@
   "target": "ln(kobs)",
   "join_mode": "pair:Ar1+Ar2",
   "n_points": 13,
+  "model": {
+    "name": "ols"
+  },
   "metrics": {
     "r2": 0.9942250017610773,
     "q2": 0.9792869362963176,
     "q2_cv": "LOOCV",
-    "rmse": 0.14139329084126448
+    "rmse": 0.1413932908412647
   },
   "best_features": [
     "Ar2_LUMO",
@@ -37,10 +40,24 @@
     "n_passing": 4686
   },
   "outputs": {
-    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_features.csv",
-    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_subset_search.csv",
-    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_top_models_by_k.csv",
-    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_Regression_Plot.html",
-    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\DFTDescriptorPipeline-main\\results\\indigo_diaryl\\indigo_diaryl_Coef_Plot.html"
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_diaryl\\indigo_diaryl_features.csv",
+    "descriptor_correlations_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_diaryl\\indigo_diaryl_descriptor_correlations.csv",
+    "feature_importance_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_diaryl\\indigo_diaryl_feature_importance.csv",
+    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_diaryl\\indigo_diaryl_subset_search.csv",
+    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_diaryl\\indigo_diaryl_top_models_by_k.csv",
+    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_diaryl\\indigo_diaryl_Regression_Plot.html",
+    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_diaryl\\indigo_diaryl_Coef_Plot.html"
+  },
+  "timing_seconds": {
+    "load_mapping_seconds": 0.007771,
+    "load_kinetics_seconds": 0.070431,
+    "parse_logs_seconds": 0.429842,
+    "build_merged_dataset_seconds": 0.024003,
+    "descriptor_correlation_seconds": 0.119252,
+    "subset_search_seconds": 799.101053,
+    "fit_best_model_seconds": 0.00401,
+    "feature_importance_seconds": 0.155592,
+    "plot_write_seconds": 0.027546,
+    "total_case_seconds": 800.028997
   }
 }

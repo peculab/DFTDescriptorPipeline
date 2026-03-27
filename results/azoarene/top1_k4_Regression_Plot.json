@@ -2,17 +2,17 @@
   "category": "azoarene",
   "target": "ln(kobs)",
   "features": [
-    "ar2_homo_hartree",
+    "prod_homo_hartree",
     "ar2_scf_energy_hartree",
-    "ar1_q_a",
+    "prod_lumo_hartree",
     "ar2_q_g"
   ],
   "metrics": {
-    "r2": 0.6470453891683188,
-    "q2": 0.4949335603450855,
+    "r2": 0.750163938520016,
+    "q2": 0.5597782071245483,
     "cv": "LOOCV",
-    "rmse": 2.631965813942187
+    "rmse": 2.2143607588060945
   },
-  "equation_pretty": "ln(kobs) = 54.05(ar2_homo_hartree) - 0.01(ar2_scf_energy_hartree) - 35.17(ar1_q_a) + 1.32(ar2_q_g) - 18.26",
+  "equation_pretty": "ln(kobs) = f(prod_homo_hartree, ar2_scf_energy_hartree, prod_lumo_hartree, ar2_q_g) [nonlinear model]",
   "plot_html": "top1_k4_Regression_Plot.html"
 }
