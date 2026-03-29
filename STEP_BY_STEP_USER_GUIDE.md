@@ -302,7 +302,6 @@ Depending on the current script version and run settings, the workflow may also 
 
 These files are especially useful for:
 
-- reviewer responses,
 - supplementary information,
 - and model interpretability analysis.
 
@@ -506,7 +505,6 @@ Use these for:
 
 - manuscript reporting,
 - supplementary tables,
-- reviewer response letters,
 - reproducibility records.
 
 ---
@@ -624,8 +622,6 @@ Before reporting final results, make sure you record:
 - final model settings
 - output folder location
 
-This is especially important if the results will be used in a manuscript revision.
-
 ---
 
 ## 14. Recommended wording for manuscript support files
@@ -633,18 +629,3 @@ This is especially important if the results will be used in a manuscript revisio
 If you want to describe this workflow briefly in a supplementary document, you may use the following wording:
 
 > The DFTDescriptorPipeline was executed from the project root using `batch_runner.py`. For each case study, Gaussian log files were parsed to extract electronic descriptors, atom-level mapping tables were generated, descriptor tables were merged with experimental data from Excel, and subset-search regression models were evaluated under user-defined cross-validation and threshold settings. The workflow generated case-level regression reports, interactive plots, and summary files for downstream analysis.
-
----
-
-## 15. Suggested next documentation upgrades
-
-For a more user-friendly public release, the following additions are recommended:
-
-1. a worked example with screenshots,
-2. a one-command demo dataset,
-3. a FAQ section,
-4. a template Excel file,
-5. and a section for adding new reaction types.
-
-These additions would make the pipeline more accessible to non-specialist users.
-
