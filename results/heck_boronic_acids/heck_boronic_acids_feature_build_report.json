@@ -1,0 +1,11 @@
+{
+  "category": "heck_boronic_acids",
+  "target": "ddG",
+  "pair_mode": false,
+  "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_features.csv",
+  "merged_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_merged.csv",
+  "n_rows_features": 17,
+  "n_rows_merged": 17,
+  "n_cols_features": 55,
+  "n_cols_merged": 56
+}

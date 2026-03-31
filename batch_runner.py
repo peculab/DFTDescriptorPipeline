@@ -46,28 +46,20 @@ CASES: List[Dict[str, str]] = [
 
 # ============================================================
 # Global constraints (apply to ALL cases)
-# - Only allow Ar1/Ar2 descriptors in PAIR MODE
-# - Do NOT allow engineered sum_/diff_/prod_ unless you flip PAIR_ENGINEERED=1
 # ============================================================
 GLOBAL_ENV = {
     "PAIR_ONLY_AR": "1",
     "PAIR_ENGINEERED": "0",
 }
 
-# Per-dataset overrides (kept minimal to avoid affecting other stable cases)
-# Easy model swapping:
-# - OLS         : REGRESSOR=ols
-# - Ridge       : REGRESSOR=ridge      + RIDGE_ALPHA=...
-# - SVM (RBF)   : REGRESSOR=svr_rbf    + SVR_C / SVR_EPSILON / SVR_GAMMA
-# - SVM (Linear): REGRESSOR=svr_linear + SVR_C / SVR_EPSILON
+# Per-dataset overrides
 CASE_ENV_OVERRIDES = {
     "azoarene": {
-        "GAUSS_LUMO_MODE": "lastblock_first",  # more robust LUMO when virt blocks split
+        "GAUSS_LUMO_MODE": "lastblock_first",
         "REGRESSOR": "svr_rbf",
         "SVR_C": "10.0",
         "SVR_EPSILON": "0.1",
         "SVR_GAMMA": "scale",
-        # "OUTLIER_DROP_TOP": "2",
     }
 }
 
@@ -84,14 +76,10 @@ def _script_dir() -> Path:
 
 
 def _norm_rel(path_str: str) -> Path:
-    """Normalize a relative path that might use Windows backslashes.
-
-    This keeps the config human-readable while making it portable on macOS/Linux.
-    """
+    """Normalize a relative path that might use Windows backslashes."""
     s = str(path_str).strip()
     if not s:
         return Path("")
-    # Treat both "\\" and "/" as separators
     s = s.replace("\\", "/")
     parts = [p for p in s.split("/") if p]
     return Path(*parts)
@@ -99,9 +87,9 @@ def _norm_rel(path_str: str) -> Path:
 
 def _ensure_import_local_modules(base: Path) -> None:
     """
-    Make sure we can import extractor_regr.py even if BASE != current cwd.
+    Make sure we can import extractor_regr_paper_descriptors.py even if BASE != cwd.
     Priority:
-      1) BASE (your project root)
+      1) BASE
       2) this script folder
     """
     base_str = str(base)
@@ -127,8 +115,6 @@ def run_mapping_extraction(base: Path) -> None:
             f"  BASE      : {base}\n"
             f"  script dir: {_script_dir()}"
         )
-
-    overall_rows = []
 
     for case in CASES:
         category = case["category"]
@@ -182,11 +168,7 @@ def _make_and_save_plot(
     out_html: Path,
     title_suffix: str,
 ) -> Tuple[float, float, str, str]:
-    """Refit a model for a given feature set and write a Plotly HTML regression plot.
-
-    Returns: (r2, q2, cv_name, equation_pretty)
-    """
-    import json
+    """Refit a model for a given feature set and write a Plotly HTML regression plot."""
     import math
 
     import numpy as np
@@ -199,8 +181,7 @@ def _make_and_save_plot(
 
     from sklearn.metrics import mean_squared_error, r2_score
 
-    # Re-use the exact same helpers as extractor_regr.py to avoid drift.
-    from extractor_regr import (  # type: ignore
+    from extractor_regr_paper_descriptors import (  # type: ignore
         _compute_q2_cv,
         _equation_pretty,
         _fit_pipeline,
@@ -229,7 +210,6 @@ def _make_and_save_plot(
     decimals = int(os.environ.get("FORMULA_DECIMALS", "2"))
     equation_pretty = _equation_pretty(features, coef_orig, intercept_orig, target, decimals=decimals)
 
-    # Plot (Actual vs Predicted)
     x = np.asarray(y, dtype=float)
     ypred = np.asarray(yhat, dtype=float)
     mask = np.isfinite(x) & np.isfinite(ypred)
@@ -244,8 +224,15 @@ def _make_and_save_plot(
     ys = m_line * xs + b_line
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x, y=ypred, mode="markers", name="Points",
-                             hovertemplate="Actual=%{x}<br>Pred=%{y}<extra></extra>"))
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=ypred,
+            mode="markers",
+            name="Points",
+            hovertemplate="Actual=%{x}<br>Pred=%{y}<extra></extra>",
+        )
+    )
     fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name="Fit line (Pred vs Actual)"))
     fig.add_trace(go.Scatter(x=xs, y=xs, mode="lines", name="y = x"))
 
@@ -277,7 +264,6 @@ def _make_and_save_plot(
     out_html.parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(str(out_html), include_plotlyjs="cdn")
 
-    # Sidecar JSON for quick programmatic use
     sidecar = {
         "category": category,
         "target": target,
@@ -286,42 +272,35 @@ def _make_and_save_plot(
         "equation_pretty": equation_pretty,
         "plot_html": str(out_html.name),
     }
-    out_html.with_suffix(".json").write_text(json.dumps(sidecar, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_html.with_suffix(".json").write_text(
+        json.dumps(sidecar, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     return r2, q2, cv_name, equation_pretty
 
 
 def run_all_regressions(base: Path, open_plots: bool = False) -> None:
-    """Run all 4 cases and write *results/{case}/...*.
-
-    What you'll get per case (inside results/<case>/):
-      - <case>_features.csv
-      - <case>_subset_search.csv
-      - <case>_top_models_by_k.csv
-      - <case>_regression_report.json
-      - <case>_Regression_Plot.html (best)
-      - <case>_top5_models.csv (summary)
-      - top1_..._Regression_Plot.html ... top5_..._Regression_Plot.html
+    """
+    Legacy full pipeline:
+      mapping -> feature extraction -> regression -> plots
+    Kept for backward compatibility.
     """
     _ensure_import_local_modules(base)
 
-    from extractor_regr import run_regression_from_mapping  # type: ignore
+    from extractor_regr_paper_descriptors import run_regression_from_mapping  # type: ignore
 
-    # Control whether Plotly HTML auto-opens
     os.environ["OPEN_PLOTS"] = "1" if open_plots else "0"
     os.environ["ATOM_ONLY"] = "1"
     os.environ["PAIR_ONLY_AR"] = "1"
     os.environ["PAIR_ENGINEERED"] = "0"
 
-    # Apply global env guards (all datasets)
     for k_env, v_env in GLOBAL_ENV.items():
         os.environ[k_env] = str(v_env)
 
     results_root = base / RESULTS_DIRNAME
     results_root.mkdir(parents=True, exist_ok=True)
 
-    # Ask extractor_regr to evaluate exactly k=3/4/5 in one run (so we can rank across k).
-    # If extractor_regr doesn't support list-form FORCE_K, it will safely ignore it.
     prev_force_k = os.environ.get("FORCE_K")
     os.environ["FORCE_K"] = ",".join(str(k) for k in K_LIST)
 
@@ -347,7 +326,6 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
         print(f"  results : {case_dir}")
         case_t0 = time.time()
 
-        # Apply per-category env overrides (restore after finishing this category)
         prev_env: Dict[str, str] = {}
         overrides = CASE_ENV_OVERRIDES.get(category, {})
         for k_env, v_env in overrides.items():
@@ -363,7 +341,6 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
                 print(f"  [WARN] kinetics xlsx not found, skip regression: {xlsx_path}")
                 continue
 
-            # One run per case: evaluate candidate models, write the usual outputs.
             run_regression_from_mapping(
                 mapping_csv=str(mapping_csv),
                 log_folder=str(log_folder),
@@ -374,7 +351,6 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
                 category_name=category,
             )
 
-            # Rank + record top N models and generate plots for each.
             top_models_csv = Path(f"{out_prefix}_top_models_by_k.csv")
             merged_csv = Path(f"{out_prefix}_features.csv")
             report_json = Path(f"{out_prefix}_regression_report.json")
@@ -415,15 +391,15 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
                     }
                 )
 
-            # Write a compact summary CSV (easy to paste into papers / tables).
             try:
                 import pandas as pd
-
-                pd.DataFrame(summary_rows).to_csv(case_dir / f"{category}_top{TOP_N_MODELS}_models.csv", index=False)
+                pd.DataFrame(summary_rows).to_csv(
+                    case_dir / f"{category}_top{TOP_N_MODELS}_models.csv",
+                    index=False,
+                )
             except Exception as e:
                 print(f"  [WARN] Failed to write top-N summary CSV: {e}")
 
-            # Case-level timing + summary row
             case_elapsed = round(time.time() - case_t0, 6)
             case_model = overrides.get("REGRESSOR", os.environ.get("REGRESSOR", "ols"))
             summary = {
@@ -437,22 +413,24 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
             if report_json.exists():
                 try:
                     report = json.loads(report_json.read_text(encoding="utf-8"))
-                    summary.update({
-                        "best_r2": report.get("metrics", {}).get("r2"),
-                        "best_q2": report.get("metrics", {}).get("q2"),
-                        "best_rmse": report.get("metrics", {}).get("rmse"),
-                        "best_features": "|".join(report.get("best_features", [])),
-                        "total_case_seconds_pipeline": report.get("timing_seconds", {}).get("total_case_seconds"),
-                    })
+                    summary.update(
+                        {
+                            "best_r2": report.get("metrics", {}).get("r2"),
+                            "best_q2": report.get("metrics", {}).get("q2"),
+                            "best_rmse": report.get("metrics", {}).get("rmse"),
+                            "best_features": "|".join(report.get("best_features", [])),
+                            "total_case_seconds_pipeline": report.get("timing_seconds", {}).get("total_case_seconds"),
+                        }
+                    )
                 except Exception as e:
                     print(f"  [WARN] Failed to read report JSON for summary: {e}")
             overall_rows.append(summary)
             Path(case_dir / f"{category}_timing_summary.json").write_text(
-                json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+                json.dumps(summary, ensure_ascii=False, indent=2),
+                encoding="utf-8",
             )
 
         finally:
-            # Restore per-category overrides
             for k_env in overrides.keys():
                 if k_env in prev_env:
                     os.environ[k_env] = prev_env[k_env]
@@ -461,7 +439,6 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
 
         print()
 
-    # Restore FORCE_K to avoid surprising callers
     if prev_force_k is None:
         os.environ.pop("FORCE_K", None)
     else:
@@ -470,31 +447,229 @@ def run_all_regressions(base: Path, open_plots: bool = False) -> None:
     if overall_rows:
         try:
             import pandas as pd
-            pd.DataFrame(overall_rows).to_csv(results_root / "all_cases_summary.csv", index=False, encoding="utf-8-sig")
+            pd.DataFrame(overall_rows).to_csv(
+                results_root / "all_cases_summary.csv",
+                index=False,
+                encoding="utf-8-sig",
+            )
         except Exception as e:
             print(f"[WARN] Failed to write all_cases_summary.csv: {e}")
 
     print("=== All regressions finished. ===")
 
 
+def run_all_features(base: Path) -> None:
+    """Only extract features CSV for all four cases."""
+    _ensure_import_local_modules(base)
+    from extractor_regr_paper_descriptors import build_features_from_mapping  # type: ignore
+
+    os.environ["ATOM_ONLY"] = "1"
+    os.environ["PAIR_ONLY_AR"] = "1"
+    os.environ["PAIR_ENGINEERED"] = "0"
+
+    for k_env, v_env in GLOBAL_ENV.items():
+        os.environ[k_env] = str(v_env)
+
+    results_root = base / RESULTS_DIRNAME
+    results_root.mkdir(parents=True, exist_ok=True)
+
+    for case in CASES:
+        category = case["category"]
+        log_folder = base / _norm_rel(case["log_subdir"])
+        mapping_csv = base / f"{category}_mapping.csv"
+        xlsx_path = base / _norm_rel(case["xlsx"])
+        target = case["target"]
+
+        case_dir = results_root / category
+        case_dir.mkdir(parents=True, exist_ok=True)
+        out_prefix = case_dir / category
+
+        print("=" * 80)
+        print(f"=== Extracting features for {category} ===")
+        print(f"  mapping_csv: {mapping_csv}")
+        print(f"  log_folder : {log_folder}")
+        print(f"  xlsx_path  : {xlsx_path}")
+
+        if not mapping_csv.exists():
+            print(f"  [WARN] mapping CSV not found: {mapping_csv}")
+            continue
+        if not xlsx_path.exists():
+            print(f"  [WARN] kinetics xlsx not found: {xlsx_path}")
+            continue
+
+        overrides = CASE_ENV_OVERRIDES.get(category, {})
+        prev_env = {k: os.environ.get(k) for k in overrides.keys()}
+
+        try:
+            for k_env, v_env in overrides.items():
+                os.environ[k_env] = str(v_env)
+
+            build_features_from_mapping(
+                mapping_csv=str(mapping_csv),
+                log_folder=str(log_folder),
+                xlsx_path=str(xlsx_path),
+                target=target,
+                output_prefix=str(out_prefix),
+                category_name=category,
+            )
+        finally:
+            for k_env in overrides.keys():
+                if prev_env[k_env] is None:
+                    os.environ.pop(k_env, None)
+                else:
+                    os.environ[k_env] = prev_env[k_env]
+
+        print()
+
+    print("=== All feature extraction finished. ===")
+
+
+def run_all_models(base: Path, open_plots: bool = False) -> None:
+    """Only fit models from existing *_features.csv files."""
+    _ensure_import_local_modules(base)
+    from extractor_regr_paper_descriptors import run_regression_from_features_csv  # type: ignore
+
+    results_root = base / RESULTS_DIRNAME
+    results_root.mkdir(parents=True, exist_ok=True)
+
+    if open_plots:
+        os.environ["OPEN_PLOTS"] = "1"
+
+    prev_force_k = os.environ.get("FORCE_K")
+    os.environ["FORCE_K"] = ",".join(str(k) for k in K_LIST)
+
+    overall_rows = []
+
+    for case in CASES:
+        case_t0 = time.time()
+        category = case["category"]
+        target = case["target"]
+        case_dir = results_root / category
+        features_csv = case_dir / f"{category}_features.csv"
+        out_prefix = case_dir / category
+
+        print("=" * 80)
+        print(f"=== Running model for {category} from existing features ===")
+        print(f"  features_csv: {features_csv}")
+
+        if not features_csv.exists():
+            print(f"  [WARN] features CSV not found: {features_csv}")
+            continue
+
+        overrides = CASE_ENV_OVERRIDES.get(category, {})
+        prev_env = {k: os.environ.get(k) for k in overrides.keys()}
+
+        try:
+            for k_env, v_env in overrides.items():
+                os.environ[k_env] = str(v_env)
+
+            run_regression_from_features_csv(
+                features_csv=str(features_csv),
+                target=target,
+                max_features=max(3, max(K_LIST)),
+                output_prefix=str(out_prefix),
+                category_name=category,
+                open_browser=open_plots,
+            )
+
+            report_json = case_dir / f"{category}_regression_report.json"
+            top_models_csv = case_dir / f"{category}_top_models_by_k.csv"
+            summary = {
+                "category": category,
+                "target": target,
+                "elapsed_seconds_batch_runner": round(time.time() - case_t0, 6),
+                "features_csv": str(features_csv),
+                "top_models_csv": str(top_models_csv),
+                "regression_report_json": str(report_json),
+            }
+            if report_json.exists():
+                try:
+                    report = json.loads(report_json.read_text(encoding="utf-8"))
+                    summary.update(
+                        {
+                            "best_r2": report.get("metrics", {}).get("r2"),
+                            "best_q2": report.get("metrics", {}).get("q2"),
+                            "best_rmse": report.get("metrics", {}).get("rmse"),
+                            "best_features": "|".join(report.get("best_features", [])),
+                        }
+                    )
+                except Exception as e:
+                    print(f"  [WARN] Failed to read report JSON for summary: {e}")
+
+            overall_rows.append(summary)
+
+        finally:
+            for k_env in overrides.keys():
+                if prev_env[k_env] is None:
+                    os.environ.pop(k_env, None)
+                else:
+                    os.environ[k_env] = prev_env[k_env]
+
+        print()
+
+    if prev_force_k is None:
+        os.environ.pop("FORCE_K", None)
+    else:
+        os.environ["FORCE_K"] = prev_force_k
+
+    if overall_rows:
+        try:
+            import pandas as pd
+            pd.DataFrame(overall_rows).to_csv(
+                results_root / "all_cases_summary.csv",
+                index=False,
+                encoding="utf-8-sig",
+            )
+        except Exception as e:
+            print(f"[WARN] Failed to write all_cases_summary.csv: {e}")
+
+    print("=== All model fitting finished. ===")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default=BASE, help="Project root folder")
     parser.add_argument("--skip-mapping", action="store_true", help="Skip Step 1 mapping extraction")
-    parser.add_argument("--skip-regression", action="store_true", help="Skip Step 2 regression/plotting")
+    parser.add_argument("--skip-regression", action="store_true", help="Skip regression/model fitting step")
+    parser.add_argument("--features-only", action="store_true", help="Only extract *_features.csv, do not fit models")
+    parser.add_argument("--model-only", action="store_true", help="Only fit models from existing *_features.csv")
+    parser.add_argument(
+        "--features-then-model",
+        action="store_true",
+        help="Extract features for all cases and then fit models from the generated feature CSVs.",
+    )
     parser.add_argument("--open-plots", action="store_true", help="Auto-open Plotly HTML in browser")
     args = parser.parse_args()
+
+    start_time = time.time()
+
+    if args.features_only and args.model_only:
+        raise SystemExit("--features-only and --model-only cannot be used together.")
+    if args.features_only and args.features_then_model:
+        raise SystemExit("--features-only and --features-then-model cannot be used together.")
+    if args.model_only and args.features_then_model:
+        raise SystemExit("--model-only and --features-then-model cannot be used together.")
 
     base = Path(args.base).expanduser().resolve()
     print(f"[INFO] BASE = {base}")
 
-    if not args.skip_mapping:
+    if not args.skip_mapping and not args.model_only:
         run_mapping_extraction(base)
 
-    if not args.skip_regression:
-        run_all_regressions(base, open_plots=args.open_plots)
+    if args.features_only:
+        run_all_features(base)
+    elif args.model_only:
+        run_all_models(base, open_plots=args.open_plots)
+    elif args.features_then_model:
+        run_all_features(base)
+        run_all_models(base, open_plots=args.open_plots)
+    elif not args.skip_regression:
+        run_all_features(base)
+        print("\n[INFO] Feature CSVs are ready. Compare the four cases first, then run with --model-only when you are satisfied.\n")
 
+    elapsed = time.time() - start_time
     print("\n>>> All done. <<<")
+    print(f"Total elapsed time: {elapsed:.2f} seconds")
 
 
 if __name__ == "__main__":

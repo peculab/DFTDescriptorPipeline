@@ -1,0 +1,11 @@
+{
+  "category": "indigo_aryl_alkyl",
+  "target": "ln(kobs)_MeCN",
+  "pair_mode": false,
+  "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_features.csv",
+  "merged_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_merged.csv",
+  "n_rows_features": 21,
+  "n_rows_merged": 21,
+  "n_cols_features": 55,
+  "n_cols_merged": 80
+}

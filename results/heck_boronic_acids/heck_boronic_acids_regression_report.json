@@ -1,63 +1,25 @@
 {
   "category": "heck_boronic_acids",
   "target": "ddG",
-  "join_mode": "single:Ar",
-  "n_points": 17,
-  "model": {
-    "name": "ols"
-  },
-  "metrics": {
-    "r2": 0.8887489655585703,
-    "q2": 0.7449548987480984,
-    "q2_cv": "LOOCV",
-    "rmse": 0.22282726738229264
-  },
   "best_features": [
+    "bond_length_c_e",
     "q_e",
-    "q_a",
-    "q_d",
-    "q_b",
-    "q_f"
+    "enthalpy_hartree",
+    "gibbs_free_energy_hartree",
+    "homo_hartree"
   ],
-  "equation_pretty": "ddG = -2.22(q_e) + 22.00(q_a) - 5.97(q_d) + 45.89(q_b) + 2.81(q_f) - 0.34",
-  "search": {
-    "ks": [
-      3,
-      4,
-      5
-    ],
-    "min_r2": 0.75,
-    "min_q2": 0.75,
-    "cand_pool": 25,
-    "max_combos": 250000,
-    "sample_combos": 80000,
-    "prefilter_top": 0,
-    "cv_mode": "loocv",
-    "n_splits": "5",
-    "dedup_corr": 0.9995,
-    "status": "BEST_NO_PASS",
-    "n_evaluated": 1507,
-    "n_passing": 0
+  "metrics": {
+    "r2": 0.8312748438641054,
+    "q2": 0.6407224429846164,
+    "rmse": 0.27441397501652165,
+    "cv": "LOOCV"
   },
-  "outputs": {
-    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_features.csv",
-    "descriptor_correlations_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_descriptor_correlations.csv",
-    "feature_importance_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_feature_importance.csv",
-    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_subset_search.csv",
-    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_top_models_by_k.csv",
-    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_Regression_Plot.html",
-    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_Coef_Plot.html"
-  },
+  "equation_pretty": "ddG = -78.17 + 53.06*bond_length_c_e - 1.19*q_e - 47.60*enthalpy_hartree + 47.60*gibbs_free_energy_hartree - 13.06*homo_hartree",
   "timing_seconds": {
-    "load_mapping_seconds": 0.012998,
-    "load_kinetics_seconds": 0.024004,
-    "parse_logs_seconds": 1.213191,
-    "build_merged_dataset_seconds": 0.00586,
-    "descriptor_correlation_seconds": 0.037643,
-    "subset_search_seconds": 91.955495,
-    "fit_best_model_seconds": 0.003999,
-    "feature_importance_seconds": 0.223777,
-    "plot_write_seconds": 0.041063,
-    "total_case_seconds": 93.612573
+    "total_case_seconds": 310.848621
+  },
+  "files": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_features.csv",
+    "top_models_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\heck_boronic_acids\\heck_boronic_acids_top_models_by_k.csv"
   }
 }

@@ -1,0 +1,23 @@
+{
+  "category": "azoarene_svr_rbf_c10_eps01_g03",
+  "target": "ln(kobs)",
+  "best_features": [
+    "ar2_Ar_HOMO",
+    "ar1_nbo_q_a",
+    "ar1_Ar_NBO_OH"
+  ],
+  "metrics": {
+    "r2": 0.6589446744632875,
+    "q2": 0.505960528295442,
+    "rmse": 2.58721923781121,
+    "cv": "LOOCV"
+  },
+  "equation_pretty": "ln(kobs) = <nonlinear model; no closed-form linear equation>",
+  "timing_seconds": {
+    "total_case_seconds": 491.860116
+  },
+  "files": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\svr_rbf_c10_eps01_g03\\azoarene_features.csv",
+    "top_models_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\svr_rbf_c10_eps01_g03\\azoarene_top_models_by_k.csv"
+  }
+}

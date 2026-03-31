@@ -1,61 +1,25 @@
 {
   "category": "indigo_aryl_alkyl",
   "target": "ln(kobs)_MeCN",
-  "join_mode": "single:Ar1",
-  "n_points": 21,
-  "model": {
-    "name": "ols"
-  },
-  "metrics": {
-    "r2": 0.7330131263122153,
-    "q2": 0.6313274538599832,
-    "q2_cv": "LOOCV",
-    "rmse": 0.27868156708716935
-  },
   "best_features": [
-    "homo_hartree",
-    "scf_energy_hartree",
-    "q_b"
+    "kobs_MeCN",
+    "ln(kobs)_toluene",
+    "kobs_toluene",
+    "LUMO",
+    "Ster_B1"
   ],
-  "equation_pretty": "ln(kobs)_MeCN = 25.86(homo_hartree) + 0.00(scf_energy_hartree) + 38.81(q_b) - 4.75",
-  "search": {
-    "ks": [
-      3,
-      4,
-      5
-    ],
-    "min_r2": 0.75,
-    "min_q2": 0.75,
-    "cand_pool": 25,
-    "max_combos": 250000,
-    "sample_combos": 80000,
-    "prefilter_top": 0,
-    "cv_mode": "loocv",
-    "n_splits": "5",
-    "dedup_corr": 0.9995,
-    "status": "BEST_NO_PASS",
-    "n_evaluated": 1507,
-    "n_passing": 0
+  "metrics": {
+    "r2": 0.9908443974537028,
+    "q2": 0.9782294147641333,
+    "rmse": 0.05160677910869846,
+    "cv": "LOOCV"
   },
-  "outputs": {
-    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_features.csv",
-    "descriptor_correlations_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_descriptor_correlations.csv",
-    "feature_importance_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_feature_importance.csv",
-    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_subset_search.csv",
-    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_top_models_by_k.csv",
-    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_Regression_Plot.html",
-    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_Coef_Plot.html"
-  },
+  "equation_pretty": "ln(kobs)_MeCN = 0.68 + 3.18*kobs_MeCN + 0.97*ln(kobs)_toluene - 8.03*kobs_toluene + 2.89*LUMO + 0.15*Ster_B1",
   "timing_seconds": {
-    "load_mapping_seconds": 0.012002,
-    "load_kinetics_seconds": 0.029004,
-    "parse_logs_seconds": 1.586939,
-    "build_merged_dataset_seconds": 0.005007,
-    "descriptor_correlation_seconds": 0.026547,
-    "subset_search_seconds": 121.896004,
-    "fit_best_model_seconds": 0.002999,
-    "feature_importance_seconds": 0.103551,
-    "plot_write_seconds": 0.026999,
-    "total_case_seconds": 123.794565
+    "total_case_seconds": 363.440578
+  },
+  "files": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_features.csv",
+    "top_models_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_top_models_by_k.csv"
   }
 }

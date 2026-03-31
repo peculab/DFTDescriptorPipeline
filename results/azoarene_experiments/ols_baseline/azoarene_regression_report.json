@@ -1,0 +1,24 @@
+{
+  "category": "azoarene_ols_baseline",
+  "target": "ln(kobs)",
+  "best_features": [
+    "ar2_scf_energy_hartree",
+    "ar2_gibbs_free_energy_hartree",
+    "ar1_nbo_q_a",
+    "ar1_Ar_NBO_OH"
+  ],
+  "metrics": {
+    "r2": 0.6176347345238431,
+    "q2": 0.46817543226294656,
+    "rmse": 2.7394288864567167,
+    "cv": "LOOCV"
+  },
+  "equation_pretty": "ln(kobs) = -214.89 - 88.08*ar2_scf_energy_hartree + 88.10*ar2_gibbs_free_energy_hartree - 142.71*ar1_nbo_q_a - 142.71*ar1_Ar_NBO_OH",
+  "timing_seconds": {
+    "total_case_seconds": 579.799482
+  },
+  "files": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\ols_baseline\\azoarene_features.csv",
+    "top_models_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\ols_baseline\\azoarene_top_models_by_k.csv"
+  }
+}

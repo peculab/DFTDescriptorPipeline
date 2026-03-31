@@ -1,0 +1,23 @@
+{
+  "category": "azoarene_ridge_a1.0",
+  "target": "ln(kobs)",
+  "best_features": [
+    "ar2_Ar_HOMO",
+    "ar1_q_a",
+    "ar2_Ar_Ster_B5"
+  ],
+  "metrics": {
+    "r2": 0.6490648467773941,
+    "q2": 0.46509450203066416,
+    "rmse": 2.624425512997949,
+    "cv": "LOOCV"
+  },
+  "equation_pretty": "ln(kobs) = -22.02 + 71.62*ar2_Ar_HOMO - 49.60*ar1_q_a + 1.34*ar2_Ar_Ster_B5",
+  "timing_seconds": {
+    "total_case_seconds": 553.385768
+  },
+  "files": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\ridge_a1.0\\azoarene_features.csv",
+    "top_models_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\ridge_a1.0\\azoarene_top_models_by_k.csv"
+  }
+}

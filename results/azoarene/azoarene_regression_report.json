@@ -1,62 +1,23 @@
 {
   "category": "azoarene",
   "target": "ln(kobs)",
-  "join_mode": "pair:Ar1+Ar2",
-  "n_points": 26,
-  "model": {
-    "name": "svr_rbf"
-  },
-  "metrics": {
-    "r2": 0.7501615073458925,
-    "q2": 0.5597887448503033,
-    "q2_cv": "LOOCV",
-    "rmse": 2.21437153283817
-  },
   "best_features": [
-    "prod_homo_hartree",
-    "ar2_scf_energy_hartree",
-    "prod_lumo_hartree",
-    "ar2_q_g"
+    "ar2_Ar_HOMO",
+    "ar1_nbo_q_a",
+    "ar1_Ar_NBO_OH"
   ],
-  "equation_pretty": "ln(kobs) = f(prod_homo_hartree, ar2_scf_energy_hartree, prod_lumo_hartree, ar2_q_g) [nonlinear model]",
-  "search": {
-    "ks": [
-      3,
-      4,
-      5
-    ],
-    "min_r2": 0.75,
-    "min_q2": 0.75,
-    "cand_pool": 25,
-    "max_combos": 250000,
-    "sample_combos": 80000,
-    "prefilter_top": 0,
-    "cv_mode": "loocv",
-    "n_splits": "5",
-    "dedup_corr": 0.9995,
-    "status": "BEST_NO_PASS",
-    "n_evaluated": 9248,
-    "n_passing": 0
+  "metrics": {
+    "r2": 0.6606231844371835,
+    "q2": 0.5043628163060295,
+    "rmse": 2.5808448620210194,
+    "cv": "LOOCV"
   },
-  "outputs": {
-    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_features.csv",
-    "descriptor_correlations_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_descriptor_correlations.csv",
-    "feature_importance_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_feature_importance.csv",
-    "subset_search_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_subset_search.csv",
-    "top_models_by_k_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_top_models_by_k.csv",
-    "plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_Regression_Plot.html",
-    "coef_plot_html": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_Coef_Plot.html"
-  },
+  "equation_pretty": "ln(kobs) = <nonlinear model; no closed-form linear equation>",
   "timing_seconds": {
-    "load_mapping_seconds": 0.042604,
-    "load_kinetics_seconds": 1.416556,
-    "parse_logs_seconds": 0.984172,
-    "build_merged_dataset_seconds": 0.026001,
-    "descriptor_correlation_seconds": 3.001403,
-    "subset_search_seconds": 856.902627,
-    "fit_best_model_seconds": 0.003,
-    "feature_importance_seconds": 0.154337,
-    "plot_write_seconds": 0.045511,
-    "total_case_seconds": 862.723672
+    "total_case_seconds": 403.668696
+  },
+  "files": {
+    "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_features.csv",
+    "top_models_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene\\azoarene_top_models_by_k.csv"
   }
 }

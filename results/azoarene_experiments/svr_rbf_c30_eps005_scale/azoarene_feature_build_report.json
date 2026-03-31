@@ -1,0 +1,11 @@
+{
+  "category": "azoarene_svr_rbf_c30_eps005_scale",
+  "target": "ln(kobs)",
+  "pair_mode": true,
+  "features_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\svr_rbf_c30_eps005_scale\\azoarene_features.csv",
+  "merged_csv": "C:\\Users\\pecu6\\OneDrive\\桌面\\Temp Doc\\DFTDescriptorPipeline\\results\\azoarene_experiments\\svr_rbf_c30_eps005_scale\\azoarene_merged.csv",
+  "n_rows_features": 25,
+  "n_rows_merged": 26,
+  "n_cols_features": 55,
+  "n_cols_merged": 113
+}

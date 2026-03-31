@@ -1,6 +1,0 @@
-rank,k,features,R2,Q2,CV,equation,plot_html
-1,4,prod_homo_hartree|ar2_scf_energy_hartree|prod_lumo_hartree|ar2_q_g,0.750163938520016,0.5597782071245483,LOOCV,"ln(kobs) = f(prod_homo_hartree, ar2_scf_energy_hartree, prod_lumo_hartree, ar2_q_g) [nonlinear model]",top1_k4_Regression_Plot.html
-2,4,sum_homo_hartree|ar2_scf_energy_hartree|prod_lumo_hartree|ar2_q_g,0.7534950581423431,0.5526464094121359,LOOCV,"ln(kobs) = f(sum_homo_hartree, ar2_scf_energy_hartree, prod_lumo_hartree, ar2_q_g) [nonlinear model]",top2_k4_Regression_Plot.html
-3,5,prod_homo_hartree|ar2_scf_energy_hartree|prod_lumo_hartree|sum_q_g|ar2_q_g,0.7472657439658186,0.5511799482464652,LOOCV,"ln(kobs) = f(prod_homo_hartree, ar2_scf_energy_hartree, prod_lumo_hartree, sum_q_g, ar2_q_g) [nonlinear model]",top3_k5_Regression_Plot.html
-4,5,prod_homo_hartree|ar2_scf_energy_hartree|prod_lumo_hartree|ar2_q_a|ar2_q_g,0.7603064323568449,0.5511089322701446,LOOCV,"ln(kobs) = f(prod_homo_hartree, ar2_scf_energy_hartree, prod_lumo_hartree, ar2_q_a, ar2_q_g) [nonlinear model]",top4_k5_Regression_Plot.html
-5,5,prod_homo_hartree|Ar2|ar2_scf_energy_hartree|prod_lumo_hartree|ar2_q_g,0.7785014413346345,0.5485356697389678,LOOCV,"ln(kobs) = f(prod_homo_hartree, Ar2, ar2_scf_energy_hartree, prod_lumo_hartree, ar2_q_g) [nonlinear model]",top5_k5_Regression_Plot.html
