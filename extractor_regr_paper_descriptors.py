@@ -1089,13 +1089,98 @@ def run_regression_from_features_csv(
         if merged_csv.exists():
             merged = pd.read_csv(merged_csv)
         else:
-            raise ValueError(f"Target column '{target}' not found in {features_csv}, and no merged CSV found.")
+            raise ValueError(
+                f"Target column '{target}' not found in {features_csv}, and no merged CSV found."
+            )
 
-    exclude_cols = {
-        target, "Ar1", "Ar2", "_join1", "_join2", "_join_key",
-        "compound", "substituent", "name", "filename", "log", "logfile", "logkey",
-    }
-    feature_cols = [c for c in merged.columns if c not in exclude_cols]
+    def _normalize_col_name(col: str) -> str:
+        return str(col).strip().lower().replace(" ", "")
+
+    def _is_identifier_like(col: str) -> bool:
+        c = _normalize_col_name(col)
+        identifier_keywords = {
+            "ar1", "ar2", "_join1", "_join2", "_join_key",
+            "compound", "substituent", "name", "filename", "log", "logfile", "logkey"
+        }
+        return c in {_normalize_col_name(x) for x in identifier_keywords}
+
+    def _is_leaky_feature(col: str, target: str) -> bool:
+        c_raw = str(col).strip()
+        c = _normalize_col_name(col)
+        t = _normalize_col_name(target)
+
+        # 1) exact target
+        if c == t:
+            return True
+
+        # 2) explicit response / kinetic / experimental outcome columns
+        leakage_keywords = [
+            "kobs",
+            "ln(kobs)",
+            "log(kobs)",
+            "l nkobs",
+            "lnkobs",
+            "rate",
+            "rateconstant",
+            "reactionrate",
+            "yield",
+            "conversion",
+            "selectivity",
+            "ee",
+            "er",
+            "dr",
+        ]
+
+        if any(k.replace(" ", "") in c for k in leakage_keywords):
+            return True
+
+        # 3) target-family leakage:
+        #    if target itself is kinetic-like, exclude other columns from same family too
+        target_family_keywords = [
+            "kobs",
+            "ln(kobs)",
+            "log(kobs)",
+            "lnkobs",
+        ]
+        if any(k.replace(" ", "") in t for k in target_family_keywords):
+            if any(k.replace(" ", "") in c for k in target_family_keywords):
+                return True
+
+        # 4) obvious solvent-specific response columns often mixed into descriptor table
+        #    e.g. kobs_MeCN, ln(kobs)_toluene
+        solvent_like_tokens = ["mecn", "toluene", "dmso", "thf", "acn", "meoh", "etoh"]
+        if any(tok in c for tok in solvent_like_tokens) and any(
+            k.replace(" ", "") in c for k in ["kobs", "ln(kobs)", "log(kobs)", "lnkobs", "rate"]
+        ):
+            return True
+
+        return False
+
+    exclude_cols = []
+    leaky_cols = []
+    kept_cols = []
+
+    for col in merged.columns:
+        if _is_identifier_like(col):
+            exclude_cols.append(col)
+        elif _is_leaky_feature(col, target):
+            leaky_cols.append(col)
+        else:
+            kept_cols.append(col)
+
+    feature_cols = kept_cols
+
+    print(f"\n[INFO] Category: {category_name}")
+    print(f"[INFO] Target: {target}")
+    print(f"[INFO] Total columns in merged table: {len(merged.columns)}")
+    print(f"[INFO] Identifier-like excluded columns ({len(exclude_cols)}): {exclude_cols}")
+    print(f"[INFO] Leaky/response-like excluded columns ({len(leaky_cols)}): {leaky_cols}")
+    print(f"[INFO] Final feature columns count: {len(feature_cols)}")
+
+    if len(feature_cols) == 0:
+        raise ValueError(
+            f"No valid feature columns remain after excluding identifiers and leakage columns for target '{target}'."
+        )
 
     X = merged[feature_cols].copy()
     y = pd.to_numeric(merged[target], errors="coerce")
@@ -1106,21 +1191,41 @@ def run_regression_from_features_csv(
     y = y.loc[valid].reset_index(drop=True)
 
     keep_cols = [c for c in X.columns if X[c].notna().sum() >= 3]
+    dropped_sparse_cols = [c for c in X.columns if c not in keep_cols]
     X = X[keep_cols]
 
-    best, tested_df = _subset_search(X, y, target, max_features=max_features, category_name=category_name)
+    print(f"[INFO] Feature columns retained after numeric/sparsity filtering: {len(keep_cols)}")
+    if dropped_sparse_cols:
+        print(f"[INFO] Dropped sparse columns ({len(dropped_sparse_cols)}): {dropped_sparse_cols}")
+
+    if X.shape[1] == 0:
+        raise ValueError(
+            f"All candidate feature columns were removed after numeric/sparsity filtering for target '{target}'."
+        )
+
+    best, tested_df = _subset_search(
+        X, y, target, max_features=max_features, category_name=category_name
+    )
 
     top_models_csv = Path(f"{output_prefix}_top_models_by_k.csv")
-    tested_df.sort_values(["Q2", "R2", "RMSE"], ascending=[False, False, True]).to_csv(top_models_csv, index=False)
+    tested_df.sort_values(["Q2", "R2", "RMSE"], ascending=[False, False, True]).to_csv(
+        top_models_csv, index=False
+    )
 
     report = {
         "category": category_name,
         "target": target,
+        "excluded_identifier_cols": exclude_cols,
+        "excluded_leaky_cols": leaky_cols,
+        "final_feature_cols": list(X.columns),
         "best_features": best.get("best_features", []),
         "metrics": best.get("metrics", {}),
         "equation_pretty": best.get("equation_pretty", ""),
         "timing_seconds": {"total_case_seconds": round(time.time() - t0, 6)},
-        "files": {"features_csv": str(features_csv), "top_models_csv": str(top_models_csv)},
+        "files": {
+            "features_csv": str(features_csv),
+            "top_models_csv": str(top_models_csv),
+        },
     }
 
     report_json = Path(f"{output_prefix}_regression_report.json")
@@ -1133,7 +1238,11 @@ def run_regression_from_features_csv(
         yhat = model.predict(Xi)
         coef_orig, intercept_orig = _orig_unit_coeffs(model)
         eq_pretty = _equation_pretty(
-            feats, coef_orig, intercept_orig, target, decimals=int(os.environ.get("FORMULA_DECIMALS", "2"))
+            feats,
+            coef_orig,
+            intercept_orig,
+            target,
+            decimals=int(os.environ.get("FORMULA_DECIMALS", "2")),
         )
 
         metrics = report["metrics"]
@@ -1156,17 +1265,28 @@ def run_regression_from_features_csv(
         )
 
         coef_html = Path(f"{output_prefix}_Coefficient_Bar.html")
-        _make_coef_bar_plot(feats, coef_orig, coef_html, title=f"{category_name} | Coefficients")
+        _make_coef_bar_plot(
+            feats, coef_orig, coef_html, title=f"{category_name} | Coefficients"
+        )
 
         if open_browser is None:
-            open_browser = os.environ.get("OPEN_PLOTS", "0").strip().lower() not in ("0", "false", "no")
+            open_browser = os.environ.get("OPEN_PLOTS", "0").strip().lower() not in (
+                "0", "false", "no"
+            )
         if open_browser:
             try:
                 webbrowser.open_new_tab(xy_html.resolve().as_uri())
             except Exception:
                 pass
-
-
+            try:
+                webbrowser.open_new_tab(coef_html.resolve().as_uri())
+            except Exception:
+                pass
+        else:
+            print(f"[INFO] Plots saved to: {xy_html}, {coef_html}")
+    else:
+        print(f"[INFO] No valid feature subset found that meets the criteria for target '{target}'.")   
+        
 def run_regression_from_mapping(
     mapping_csv: str,
     log_folder: str,

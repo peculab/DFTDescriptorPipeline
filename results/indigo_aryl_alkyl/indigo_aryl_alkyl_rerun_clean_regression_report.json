@@ -1,0 +1,72 @@
+{
+  "category": "N-aryl-N′-alkylindigo",
+  "target": "ln(kobs)_MeCN",
+  "excluded_identifier_cols": [
+    "Ar1",
+    "Compound",
+    "_join_key"
+  ],
+  "excluded_leaky_cols": [
+    "kobs_MeCN",
+    "ln(kobs)_MeCN",
+    "kobs_toluene",
+    "ln(kobs)_toluene",
+    "Energy_C1-O",
+    "Energy_C1-C2",
+    "Ster_L",
+    "Ster_B1",
+    "Ster_B5",
+    "scf_energy_hartree",
+    "gibbs_free_energy_hartree",
+    "enthalpy_hartree",
+    "homo_hartree",
+    "lumo_hartree",
+    "gap_hartree",
+    "nbo_bond_energy_c_a",
+    "nbo_bond_energy_c_d",
+    "nbo_bond_energy_c_e",
+    "sterimol_L",
+    "sterimol_B1",
+    "sterimol_B5",
+    "Ar_Ster_L",
+    "Ar_Ster_B1",
+    "Ar_Ster_B5"
+  ],
+  "final_feature_cols": [
+    "Entry",
+    "L_C1-C2",
+    "Occupancy_C1-O",
+    "Occupancy_C1-C2",
+    "LUMO",
+    "HOMO",
+    "dipole moment",
+    "polarizability",
+    "Ar_NBO_C1_x",
+    "Ar_NBO_C2_x",
+    "Ar_NBO_=O",
+    "Ar_NBO_-O",
+    "Ar_I_C=O",
+    "Ar_v_C=O"
+  ],
+  "best_features": [
+    "Ar_v_C=O",
+    "Ar_NBO_-O",
+    "LUMO",
+    "L_C1-C2",
+    "Ar_NBO_C2_x"
+  ],
+  "metrics": {
+    "r2": 0.9320797314560794,
+    "q2": 0.8413946722659946,
+    "rmse": 0.14056040058827426,
+    "cv": "LOOCV"
+  },
+  "equation_pretty": "ln(kobs)_MeCN = -131.17 - 0.09*Ar_v_C=O - 99.30*Ar_NBO_-O + 10.27*LUMO + 152.37*L_C1-C2 - 8.64*Ar_NBO_C2_x",
+  "timing_seconds": {
+    "total_case_seconds": 205.263969
+  },
+  "files": {
+    "features_csv": "results/indigo_aryl_alkyl/indigo_aryl_alkyl_features.csv",
+    "top_models_csv": "results\\indigo_aryl_alkyl\\indigo_aryl_alkyl_rerun_clean_top_models_by_k.csv"
+  }
+}
