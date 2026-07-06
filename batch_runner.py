@@ -15,32 +15,14 @@ from typing import Dict, List, Tuple
 BASE = r""
 
 # ============================================================
-# 2) Four systems configuration
+# 2) Active system configuration
 # ============================================================
 CASES: List[Dict[str, str]] = [
     {
-        "category": "azoarene",
-        "log_subdir": r"azoarene\logfiles",
-        "xlsx": r"azoarene\azoarene_data.xlsx",
-        "target": "ln(kobs)",
-    },
-    {
-        "category": "heck_boronic_acids",
-        "log_subdir": r"heck_boronic_acids\logfiles",
-        "xlsx": r"heck_boronic_acids\heck_boronic_acids_data.xlsx",
-        "target": "ddG",
-    },
-    {
-        "category": "indigo_aryl_alkyl",
-        "log_subdir": r"indigo_aryl_alkyl\logfiles",
-        "xlsx": r"indigo_aryl_alkyl\indigo_aryl_alkyl_data.xlsx",
-        "target": "ln(kobs)_MeCN",
-    },
-    {
-        "category": "indigo_diaryl",
-        "log_subdir": r"indigo_diaryl\logfiles",
-        "xlsx": r"indigo_diaryl\indigo_diaryl_data.xlsx",
-        "target": "ln(kobs)",
+        "category": "Modeling",
+        "log_subdir": r"Modeling\log files",
+        "xlsx": r"Modeling\list.xlsx",
+        "target": "dG",
     },
 ]
 

@@ -1,0 +1,10 @@
+category,logfile,a,b,c,d,e,f,g,ok,error,elapsed
+Modeling,CF3.log,9,18,7,8,1,2,6,1,,0.009
+Modeling,CN.log,9,16,7,8,1,2,6,1,,0.005
+Modeling,CO2Me.log,9,18,7,8,4,3,5,1,,0.015
+Modeling,F.log,10,15,7,9,1,2,6,1,,0.004
+Modeling,H.log,9,15,7,8,6,1,5,1,,0.004
+Modeling,NO2.log,9,17,7,8,1,2,6,1,,0.008
+Modeling,OCF3.log,10,19,7,9,1,2,6,1,,0.008
+Modeling,OMe.log,10,16,7,9,1,2,6,1,,0.006
+Modeling,Ph.log,9,20,7,8,1,2,6,1,,0.019
